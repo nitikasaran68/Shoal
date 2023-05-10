@@ -35,6 +35,7 @@ interface Scheduler;
 	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
         latency_res;
 
+    // Stats
     method Action timeSlotsCount();
 	method Action sentHostPktCount();
 	method Action sentFwdPktCount();
@@ -48,7 +49,7 @@ interface Scheduler;
     method Action stop();
 endinterface
 
-module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
+module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_generator,
                 Clock pcieClock, Reset pcieReset) (Scheduler);
 
     Bool verbose = False;
@@ -81,7 +82,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
         end
     endrule
 
-    /* Stats */
+    /* ---------------- Stats ----------------- */
 	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) time_slots_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_host_pkt_fifo
@@ -157,6 +158,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(HEADER_SIZE)))
         curr_header <- replicateM(mkReg(0));
 
+
+// State for CC and selective scheduling?
 `ifdef SHOAL
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS, FIFOF#(ServerIndex)))
         last_cell_sent_to
@@ -166,6 +169,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
         last_cell_recvd_from
             <- replicateM(replicateM(mkSizedFIFOF(valueof(FWD_BUFFER_SIZE))));
 
+    // Does the use of FIFO (intead of FIFOF) here indicate that one can always dequeue
+    // from this queue?? I don't think so.
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS,
             Vector#(NUM_OF_SERVERS, FIFO#(void))))
         schedule_host_flow_fifo <- replicateM(replicateM(replicateM(mkFIFO)));
@@ -182,9 +187,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
     endfunction
 `endif
 
+    // --------- rules at each NIC (node) ----------
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
+
+    // Question: do assignments in a rule happen sequentially? Or in a non-blocking way??
+                
+        // -------- rule to set communicating node based on timeslot -------- 
         rule figure_out_curr_timeslot (start_flag[i] == 1);
+            // Only once per timeslot. "counter" is the cycle idx within the timeslot
             if (counter[i] == 0)
             begin
                 time_slot[i] <= (time_slot[i] + 1)
@@ -201,6 +212,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
 `ifndef SHOAL
                 buffer_index[i] <= d;
 `endif
+                buffer_index[i] <= d;
                 num_of_time_slots_used_reg[i] <= num_of_time_slots_used_reg[i] + 1;
             end
             if (counter[i] == timeslot_len - 1)
@@ -208,20 +220,31 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
             else
                 counter[i] <= counter[i] + 1;
         endrule
+        // ------------------------------------------------------------------
 
+
+        // Tx rules for each destination node. At most one req_*_cell rule gets fired per timeslot,
+        // depending on buffer_index, and type. These rules only get fired on the fourth clock cycle
+        // of each timeslot. It is obvious that these should fire on a single clock cycle of the timeslot.
+        // My guess for why this is the 4th cycle is that the figure_out_curr_timeslot takes 3 cycles to execute
+        // given assignment dependencies.
+        // But it could also be because 3 rules need to fire before Tx: figure_out_curr_timeslot,
+        //  schedule_host_flow, insert_into_token_queue, choose_right_buffer_to_send_from.
+        // Check whether bluespec "rules" execute in a single clock cycle? (BSV ref 6.2.2)
         for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
         begin
             rule req_host_cell (start_flag[i] == 1 && counter[i] == 3
                             && buffer_type[i] == HOST
                             && buffer_index[i] == fromInteger(j));
-                cg[i].host_cell_req[j].put(?);
+                cell_generator[i].host_cell_req[j].put(?);
             endrule
 
             rule get_host_cell;
-                let d <- cg[i].host_cell_res[j].get;
+                let d <- cell_generator[i].host_cell_res[j].get;
                 cell_to_send_fifo[i].enq(d);
             endrule
 
+            // Get cell to send from relevant buffer (if any)
             rule req_fwd_cell (start_flag[i] == 1 && counter[i] == 3
                             && buffer_type[i] == FWD
                             && buffer_index[i] == fromInteger(j));
@@ -236,11 +259,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
 
         rule req_dummy_cell (start_flag[i] == 1 && counter[i] == 3
                         && buffer_type[i] == DUMMY);
-            cg[i].dummy_cell_req.put(?);
+            cell_generator[i].dummy_cell_req.put(?);
         endrule
 
         rule get_dummy_cell;
-            let d <- cg[i].dummy_cell_res.get;
+            let d <- cell_generator[i].dummy_cell_res.get;
             cell_to_send_fifo[i].enq(d);
         endrule
 
@@ -500,9 +523,13 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
             for (Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
             begin //k represents the host flow index via j
 
+    // First, update state from packets sent/recvd, then read that state to decide local ready flows.
+    // (If multiple rules can fire, that is)
     (* descending_urgency = "clear_host_pkt_allocated_bit, schedule_host_flow" *)
     (* descending_urgency = "update_with_new_throttle_value, schedule_host_flow" *)
 
+                // A packet was just sent out for this (local) sub-flow, opening up
+                // a slot to schedule another one.
                 rule clear_host_pkt_allocated_bit;
                     let x <- toGet(clear_host_pkt_allocated_fifo[i][j][k]).get;
                     host_pkt_allocated[i][j][k] <= 0;
@@ -519,21 +546,36 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
                     host_flow_scheduling_info[i][j][k] <= h;
                 endrule
 
+                // Rule to check if a new cell can be released into local ready flow
                 rule schedule_host_flow;
                     let x <- toGet(schedule_host_flow_fifo[i][j][k]).get;
                     //schedule host flow
                     ServerIndex fwd_buffer_index = fromInteger(j);
                     Bit#(64) fwd_buffer_len
                         = fwd_buffer[i][fwd_buffer_index].elements;
+                
+                    // count = number of local flows enqueued to send via current int dst j.
+                    // which values of host_packets_allocated[i][j] are 1?
+                    // BSV ref: "uncurry converts a function of two arguments into 
+                    // a function which takes a single argument, a pair"
+                    // BSV ref "map: Map a function over a vector, returning a new vector of results.""
+                    // Could this not just be: let count = countElem(1, host_pkt_allocated[i][j]) ??
                     let v = map(uncurry(compare),
                         zip(readVReg(host_pkt_allocated[i][j]), replicate(1)));
+                    // how many ones in v?
                     let count = countElem(1, v);
+
+                    // Total queue length for i->j = (local + remote)
                     Bit#(THROTTLE_BITS) agg_queue_len
                         = truncate(fwd_buffer_len) + pack(zeroExtend(count));
 
+                    // How much time has passed since the latest feedback value was received?
                     Bit#(64) time_elapsed
                         = curr_epoch[i]
                             - host_flow_scheduling_info[i][j][k].start_epoch;
+                    
+                    // Is the remote queue length greater than the time elapsed? (not drained yet)
+                    // Set wait time acc to the difference.
                     Bit#(THROTTLE_BITS) func =
                         (host_flow_scheduling_info[i][j][k].throttle_value
                             >= truncate(time_elapsed))
@@ -541,10 +583,16 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
                             - truncate(time_elapsed)
                         : 0;
 
+                    // If the wait time until the remote queue (j->k) drains is less than 
+                    // or equal to the local queue (i->j) length, then we can release another
+                    // cell into the queue for subflow i->j->k. This ensures that this new cell
+                    // will experience no queing at the intermediate node, as described in paper sec 3.3.2.
                     if (host_flow_scheduling_info[i][j][k].schedulable == 1
                         //&& pkt_scheduled[j] < flow_size[j]
                         && agg_queue_len >= func)
                     begin
+                        // Add token to schedule a new cell for this subflow after agg_queue_len epochs.
+                        // (Local queue would be empty by then, so queue length is always <= 1!)
                         insert_into_token_queue_fifo[i][j][k].enq(agg_queue_len);
 
                         HostFlowT h = HostFlowT {
@@ -559,6 +607,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
                         host_pkt_allocated[i][j][k] <= 1;
                     end
 
+                    // Choose buffer only once per time slot - not for all (N-1) subflows
+                    // via the current intermediate dest.
                     if (k == 0)
                         choose_right_buffer_to_send_from_fifo[i][j].enq(?);
                 endrule
@@ -578,6 +628,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
             rule choose_right_buffer_to_send_from;
                 let d <- toGet(choose_right_buffer_to_send_from_fifo[i][j]).get;
 
+                // Are there local ready flows that were scheduled to send now or earlier?
                 ServerIndex host_flow_to_send = fromInteger(valueof(NUM_OF_SERVERS));
                 if (host_flow_ready_queue[i][j].notEmpty)
                 begin
@@ -593,6 +644,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
                     end
                 end
 
+                // host_flow_to_send is the next (final) dest that port i wants to 
+                // send cells to, acc to host_flow_ready_queue.
+
+                // Is a local flow being sent? If not, FWD or DUMMY
                 if (host_flow_to_send == fromInteger(valueof(NUM_OF_SERVERS)))
                 begin
                     if (!fwd_buffer[i][j].empty)
@@ -626,8 +681,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
             ServerIndex src_mac = hd[63:55];
             Bit#(THROTTLE_BITS) feedback = hd[11:1];
 
+            // does this check that feedback (queue length) was valid,
+            // i.e. feedback was actually sent?
             if (feedback != maxBound)
             begin
+                // here, buffer_index is the final destination of the last local flow
+                // that was sent to intermediate node src_mac.
                 let buffer_index <- toGet(last_cell_sent_to[i][src_mac]).get;
                 if (buffer_index != fromInteger(valueof(NUM_OF_SERVERS)))
                 begin
@@ -680,6 +739,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cg,
         temp8[i] = toGet(latency_fifo[i]);
     end
 
+    // Should prob change name from first_host_index to fpga_idx or altera_idx
     method Action start(ServerIndex first_host_index, Bit#(8) t);
         timeslot_len <= t;
         for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)

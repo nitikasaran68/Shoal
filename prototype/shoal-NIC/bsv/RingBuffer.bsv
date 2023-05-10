@@ -47,6 +47,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
     Bool is_empty = (head == tail);
     Bool is_full = (head == tail + fromInteger(buffer_size));
 
+    // What is a bypass FIFO and why is it used here??
     FIFO#(ReadReqType) read_request_fifo <- mkBypassFIFO;
     FIFO#(ReadResType) read_response_fifo <- mkBypassFIFO;
     FIFO#(WriteReqType) write_request_fifo <- mkFIFO;

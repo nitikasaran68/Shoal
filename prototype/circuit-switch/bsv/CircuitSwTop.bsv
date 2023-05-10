@@ -22,6 +22,8 @@ import EthMac::*;
 import AlteraEthPhy::*;
 import DE5Pins::*;
 
+// Interface argument to hardware module. Using these methods, h/w
+// can send data back up to the software layer.
 interface CircuitSwTopIndication;
     method Action display_tx_port_0_stats
         (Bit#(64) sop, Bit#(64) eop, Bit#(64) blocks, Bit#(64) cells);
@@ -45,11 +47,13 @@ interface CircuitSwTopIndication;
     method Action display_latency_port_3_stats(Bit#(64) t);
 endinterface
 
+// Software interface: these methods will be triggered from cpp files.
 interface CircuitSwTopRequest;
     method Action startSwitching(Bit#(8) reconfig_flag, Bit#(64) timeslot);
 	method Action printStats();
 endinterface
 
+// Hardware interface: this is the interface implemented by the hardware module.
 interface CircuitSwTop;
     interface CircuitSwTopRequest request;
     interface `PinType pins;

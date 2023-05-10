@@ -4,7 +4,7 @@ typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 typedef BITS_PER_CYCLE HEADER_SIZE; //size of cell header
 
 typedef 4 NUM_OF_SERVERS;
-typedef Bit#(9) ServerIndex;
+typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
 `ifdef MULTI_NIC
 typedef 4 NUM_OF_ALTERA_PORTS;

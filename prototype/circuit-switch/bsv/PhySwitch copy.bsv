@@ -50,16 +50,16 @@ interface PhySwitch;
 `endif
 endinterface
 
-`ifdef CW_PHY_SIM
-module mkPhySwitch#(Clock txClock,
+`ifndef CW_PHY_SIM
+module mkPhySwitch#(EthPhyIfc phys,
+            Clock txClock,
             Reset txReset,
             Reset tx_reset,
 			Clock rxClock,
 		    Reset rxReset,
             Reset rx_reset) (PhySwitch);
 `else
-module mkPhySwitch#(EthPhyIfc phys,
-            Clock txClock,
+module mkPhySwitch#(Clock txClock,
             Reset txReset,
             Reset tx_reset,
 			Clock rxClock,
@@ -390,7 +390,7 @@ module mkPhySwitch#(EthPhyIfc phys,
 
         rule transmit_data;
             let d <- toGet(data[j]).get;
-            if (verbose && d == ' )
+            if (verbose && d == 'h6a954aa552a954abfb)
                 $display("[SW] t = %d Recvd from rx", tx_counter);
             if (d == 'h6a954aa552a954abfb && latency_reg[j] == 0)
                 latency_reg[j] <= tx_counter - start_time[j];

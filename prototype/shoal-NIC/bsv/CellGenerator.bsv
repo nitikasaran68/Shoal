@@ -13,6 +13,7 @@ import RingBuffer::*;
 
 `include "ConnectalProjectConfig.bsv"
 
+// But this doesn't have all the fields mentioned in Shoal paper?!
 typedef struct {
     ServerIndex src_mac;
     ServerIndex dst_mac;
@@ -125,6 +126,7 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
 
     for (Integer i = 0; i < valueof(NUM_OF_SERVERS); i = i + 1)
     begin
+        // Count num_of_cycles_to_wait cycles after last cell.
         rule put_next_host_cell
             (start_flag == 1 && host_index != fromInteger(i)
                 && prev_cell_put_in_buffer[i] == 1);
@@ -154,10 +156,14 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
                 end
                 Bit#(HEADER_SIZE) hd = pack(h);
                 Bit#(BUS_WIDTH) data = {hd, '0};
+
+                // Start and end of packet??
                 Bit#(1) sop = 0;
                 Bit#(1) eop = 0;
                 if (curr_host_block_num[i] == 0)
                     sop = 1;
+                // Note that curr_host_block_num is not reset here.
+                // It will be reset by put_next_host_cell, after waiting num_of_cycles_to_wait.
                 if (curr_host_block_num[i] == fromInteger(max_host_block_num) - 1)
                 begin
                     eop = 1;
@@ -176,7 +182,10 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
     end
 
 /*-------------------------------------------------------------------------------*/
-    //formula = round(((cell size/(6.4 * rate) - (cell size/bus width))) - 1)
+    // If rate is in bits/ns, then you wish to send one cell in (cell size/(6.4 * rate))
+    // cycles. But it takes only (cell size/bus width)) to send a cell. The diff between
+    // these is the cycles you want to wait between consecutive cells.
+    // formula = round(((cell size/(6.4 * rate) - (cell size/bus width))) - 1)
     function Integer cycles_to_wait(Integer rate);
         Real x = 6.4 * fromInteger(rate);
         Real y = fromInteger(cell_size)/x;
@@ -184,6 +193,7 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
         return round(z);
     endfunction
 
+    // Why do we have these cases?? Why can't we convert rate_reg to input for cycles_to_wait?
 	Reg#(Bit#(1)) rate_set_flag <- mkReg(0);
 	rule decodeRate (rate_set_flag == 1);
 		case (rate_reg)

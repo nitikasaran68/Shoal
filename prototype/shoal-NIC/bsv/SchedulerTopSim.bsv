@@ -103,10 +103,10 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
     Mac mac <- mkMac(0, txClock, txReset, tx_rst, rxClock, rxReset, rx_rst);
 
     Vector#(NUM_OF_ALTERA_PORTS, CellGenerator)
-        cg <- replicateM(mkCellGenerator(valueOf(CELL_SIZE)),
+        cell_generator <- replicateM(mkCellGenerator(valueOf(CELL_SIZE)),
             clocked_by txClock, reset_by tx_rst);
 
-    Scheduler scheduler <- mkScheduler(mac, cg, defaultClock, defaultReset,
+    Scheduler scheduler <- mkScheduler(mac, cell_generator, defaultClock, defaultReset,
             clocked_by txClock, reset_by tx_rst);
 
 /*-------------------------------------------------------------------------------*/
@@ -232,7 +232,7 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 			start_counting <= 0;
             for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
             begin
-                cg[i].stop();
+                cell_generator[i].stop();
             end
             scheduler.stop();
             get_time_slots_flag <= 1; //start collecting stats
@@ -293,7 +293,7 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
                         && rate_ready == 1
                         && timeslot_ready == 1);
             if (rate != 0)
-                cg[i].start(fromInteger(i), rate);
+                cell_generator[i].start(fromInteger(i), rate);
 
             if (i == 0)
             begin

@@ -48,6 +48,7 @@ interface CircuitSwTopSimIndication;
 `endif
 endinterface
 
+// Interface methods that will be triggered from test_sim.cpp
 interface CircuitSwTopSimRequest;
     method Action startSwitching(Bit#(8) reconfig_flag, Bit#(64) timeslot);
 	method Action printStats();
@@ -62,6 +63,7 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
     Clock defaultClock <- exposeCurrentClock();
     Reset defaultReset <- exposeCurrentReset();
 
+    // Note: these clocks are not synthesizable!
     Clock txClock <- mkAbsoluteClock(0, 15);
     Reset txReset <- mkAsyncReset(2, defaultReset, txClock);
 
