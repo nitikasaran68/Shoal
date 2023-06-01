@@ -136,55 +136,57 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
         get_num_of_blocks_recvd_by_mac_flag
 	        <- mkSyncFIFO(1, txClock, txReset, rxClock);
 
-    rule get_time_slot_stats (get_time_slots_flag == 1);
-        scheduler.timeSlotsCount();
-        get_time_slots_flag <= 0;
-        get_sent_host_pkt_flag <= 1;
-    endrule
+    // Commenting stat requests to scheduler for now, the interfaces do not exist.
+    
+    // rule get_time_slot_stats (get_time_slots_flag == 1);
+    //     scheduler.timeSlotsCount();
+    //     get_time_slots_flag <= 0;
+    //     get_sent_host_pkt_flag <= 1;
+    // endrule
 
-    rule get_sent_host_pkt_stats (get_sent_host_pkt_flag == 1);
-        scheduler.sentHostPktCount();
-        get_sent_host_pkt_flag <= 0;
-        get_sent_fwd_pkt_flag <= 1;
-    endrule
+    // rule get_sent_host_pkt_stats (get_sent_host_pkt_flag == 1);
+    //     scheduler.sentHostPktCount();
+    //     get_sent_host_pkt_flag <= 0;
+    //     get_sent_fwd_pkt_flag <= 1;
+    // endrule
 
-    rule get_sent_fwd_pkt_stats (get_sent_fwd_pkt_flag == 1);
-        scheduler.sentFwdPktCount();
-        get_sent_fwd_pkt_flag <= 0;
-        get_received_host_pkt_flag <= 1;
-    endrule
+    // rule get_sent_fwd_pkt_stats (get_sent_fwd_pkt_flag == 1);
+    //     scheduler.sentFwdPktCount();
+    //     get_sent_fwd_pkt_flag <= 0;
+    //     get_received_host_pkt_flag <= 1;
+    // endrule
 
-    rule get_received_host_pkt_stats (get_received_host_pkt_flag == 1);
-        scheduler.receivedHostPktCount();
-        get_received_host_pkt_flag <= 0;
-        get_received_fwd_pkt_flag <= 1;
-    endrule
+    // rule get_received_host_pkt_stats (get_received_host_pkt_flag == 1);
+    //     scheduler.receivedHostPktCount();
+    //     get_received_host_pkt_flag <= 0;
+    //     get_received_fwd_pkt_flag <= 1;
+    // endrule
 
-    rule get_received_fwd_pkt_stats (get_received_fwd_pkt_flag == 1);
-        scheduler.receivedFwdPktCount();
-        get_received_fwd_pkt_flag <= 0;
-        get_received_corrupted_pkt_flag <= 1;
-    endrule
+    // rule get_received_fwd_pkt_stats (get_received_fwd_pkt_flag == 1);
+    //     scheduler.receivedFwdPktCount();
+    //     get_received_fwd_pkt_flag <= 0;
+    //     get_received_corrupted_pkt_flag <= 1;
+    // endrule
 
-    rule get_received_corrupted_pkt_stats
-            (get_received_corrupted_pkt_flag == 1);
-        scheduler.receivedCorruptedPktCount();
-        get_received_corrupted_pkt_flag <= 0;
-        get_received_wrong_dst_pkt_flag <= 1;
-    endrule
+    // rule get_received_corrupted_pkt_stats
+    //         (get_received_corrupted_pkt_flag == 1);
+    //     scheduler.receivedCorruptedPktCount();
+    //     get_received_corrupted_pkt_flag <= 0;
+    //     get_received_wrong_dst_pkt_flag <= 1;
+    // endrule
 
-    rule get_received_wrong_dst_pkt_stats
-            (get_received_wrong_dst_pkt_flag == 1);
-        scheduler.receivedWrongDstPktCount();
-        get_received_wrong_dst_pkt_flag <= 0;
-        get_latency_flag <= 1;
-    endrule
+    // rule get_received_wrong_dst_pkt_stats
+    //         (get_received_wrong_dst_pkt_flag == 1);
+    //     scheduler.receivedWrongDstPktCount();
+    //     get_received_wrong_dst_pkt_flag <= 0;
+    //     get_latency_flag <= 1;
+    // endrule
 
-    rule get_latency_stats (get_latency_flag == 1);
-        scheduler.latency();
-        get_latency_flag <= 0;
-        get_num_of_blocks_trans_from_mac_flag <= 1;
-    endrule
+    // rule get_latency_stats (get_latency_flag == 1);
+    //     scheduler.latency();
+    //     get_latency_flag <= 0;
+    //     get_num_of_blocks_trans_from_mac_flag <= 1;
+    // endrule
 
     rule get_num_of_blocks_trans_from_mac_stats
             (get_num_of_blocks_trans_from_mac_flag == 1);
@@ -338,11 +340,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule time_slots_rule;
-            let res <- scheduler.time_slots_res[i].get;
-            time_slots_reg[i] <= res;
-            fire_time_slots[i] <= 1;
-        endrule
+        // rule time_slots_rule;
+        //     let res <- scheduler.time_slots_res[i].get;
+        //     time_slots_reg[i] <= res;
+        //     fire_time_slots[i] <= 1;
+        // endrule
 
         rule time_slots (fire_time_slots[i] == 1);
             fire_time_slots[i] <= 0;
@@ -363,11 +365,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule sent_host_pkt_rule;
-            let res <- scheduler.sent_host_pkt_res[i].get;
-            sent_host_pkt_reg[i] <= res;
-            fire_sent_host_pkt[i] <= 1;
-        endrule
+        // rule sent_host_pkt_rule;
+        //     let res <- scheduler.sent_host_pkt_res[i].get;
+        //     sent_host_pkt_reg[i] <= res;
+        //     fire_sent_host_pkt[i] <= 1;
+        // endrule
 
         rule sent_host_pkt (fire_sent_host_pkt[i] == 1);
             fire_sent_host_pkt[i] <= 0;
@@ -388,11 +390,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule sent_fwd_pkt_rule;
-            let res <- scheduler.sent_fwd_pkt_res[i].get;
-            sent_fwd_pkt_reg[i] <= res;
-            fire_sent_fwd_pkt[i] <= 1;
-        endrule
+        // rule sent_fwd_pkt_rule;
+        //     let res <- scheduler.sent_fwd_pkt_res[i].get;
+        //     sent_fwd_pkt_reg[i] <= res;
+        //     fire_sent_fwd_pkt[i] <= 1;
+        // endrule
 
         rule sent_fwd_pkt (fire_sent_fwd_pkt[i] == 1);
             fire_sent_fwd_pkt[i] <= 0;
@@ -413,11 +415,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule received_host_pkt_rule;
-            let res <- scheduler.received_host_pkt_res[i].get;
-            received_host_pkt_reg[i] <= res;
-            fire_received_host_pkt[i] <= 1;
-        endrule
+        // rule received_host_pkt_rule;
+        //     let res <- scheduler.received_host_pkt_res[i].get;
+        //     received_host_pkt_reg[i] <= res;
+        //     fire_received_host_pkt[i] <= 1;
+        // endrule
 
         rule received_host_pkt (fire_received_host_pkt[i] == 1);
             fire_received_host_pkt[i] <= 0;
@@ -442,11 +444,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule received_fwd_pkt_rule;
-            let res <- scheduler.received_fwd_pkt_res[i].get;
-            received_fwd_pkt_reg[i] <= res;
-            fire_received_fwd_pkt[i] <= 1;
-        endrule
+        // rule received_fwd_pkt_rule;
+        //     let res <- scheduler.received_fwd_pkt_res[i].get;
+        //     received_fwd_pkt_reg[i] <= res;
+        //     fire_received_fwd_pkt[i] <= 1;
+        // endrule
 
         rule received_fwd_pkt (fire_received_fwd_pkt[i] == 1);
             fire_received_fwd_pkt[i] <= 0;
@@ -471,11 +473,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule received_corrupted_pkt_rule;
-            let res <- scheduler.received_corrupted_pkt_res[i].get;
-            received_corrupted_pkt_reg[i] <= res;
-            fire_received_corrupted_pkt[i] <= 1;
-        endrule
+        // rule received_corrupted_pkt_rule;
+        //     let res <- scheduler.received_corrupted_pkt_res[i].get;
+        //     received_corrupted_pkt_reg[i] <= res;
+        //     fire_received_corrupted_pkt[i] <= 1;
+        // endrule
 
         rule received_corrupted_pkt (fire_received_corrupted_pkt[i] == 1);
             fire_received_corrupted_pkt[i] <= 0;
@@ -500,11 +502,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule received_wrong_dst_pkt_rule;
-            let res <- scheduler.received_wrong_dst_pkt_res[i].get;
-            received_wrong_dst_pkt_reg[i] <= res;
-            fire_received_wrong_dst_pkt[i] <= 1;
-        endrule
+        // rule received_wrong_dst_pkt_rule;
+        //     let res <- scheduler.received_wrong_dst_pkt_res[i].get;
+        //     received_wrong_dst_pkt_reg[i] <= res;
+        //     fire_received_wrong_dst_pkt[i] <= 1;
+        // endrule
 
         rule received_wrong_dst_pkt (fire_received_wrong_dst_pkt[i] == 1);
             fire_received_wrong_dst_pkt[i] <= 0;
@@ -529,11 +531,11 @@ module mkSchedulerTopSim#(SchedulerTopSimIndication indication)
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule latency_rule;
-            let res <- scheduler.latency_res[i].get;
-            latency_reg[i] <= res;
-            fire_latency[i] <= 1;
-        endrule
+        // rule latency_rule;
+        //     let res <- scheduler.latency_res[i].get;
+        //     latency_reg[i] <= res;
+        //     fire_latency[i] <= 1;
+        // endrule
 
         rule latency (fire_latency[i] == 1);
             fire_latency[i] <= 0;

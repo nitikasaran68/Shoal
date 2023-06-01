@@ -59,7 +59,7 @@ module mkMac#(Clock txClock,
             Reset rx_reset) (Mac);
 `endif
 
-    Bool verbose = False;
+    Bool verbose = True;
 
     Clock defaultClock <- exposeCurrentClock();
     Reset defaultReset <- exposeCurrentReset();
@@ -148,6 +148,15 @@ module mkMac#(Clock txClock,
 		rule handle_mac_tx_write_req;
             let d <- toGet(mac_tx_write_req_fifo[i]).get;
 
+            `ifdef NIC_SIM
+             if (False)
+                 skip_blocks[i] <= 1;
+             else
+                 skip_blocks[i] <= 0;
+
+             cell_count[i] <= cell_count[i] + 1;
+            `endif
+
             Bit#(1) sop = 0;
             Bit#(1) eop = 0;
 
@@ -178,7 +187,30 @@ module mkMac#(Clock txClock,
             rule send_to_lower_layer (turn[i] == fromInteger(j));
                 let d <- toGet(tx_data[i][j]).get;
                 
+    `ifdef NIC_SIM
+                if (host_index == 1 && skip_blocks[i] == 1)
+                begin
+                    if (j > 2)
+                    begin
+                        eth_mac[i].packet_tx.put(d);
+                        if (verbose)
+                            $display("[MAC %d] t = %d data sent to mac = %d %d %x",
+                                host_index, tx_counter, d.sop, d.eop, d.data);
+                    end
+                end
+
+                else
+                begin
+                    eth_mac[i].packet_tx.put(d);
+                    if (verbose && i == 0)
+                        $display("[MAC %d] t = %d data sent to mac = %d %d %x",
+                            host_index, tx_counter, d.sop, d.eop, d.data);
+                end
+    `endif
+
+    `ifdef HW_DE5
                 eth_mac[i].packet_tx.put(d);
+    `endif
 
                 num_of_blocks_transmitted_from_mac[i]
                     <= num_of_blocks_transmitted_from_mac[i] + 1;
@@ -224,7 +256,34 @@ module mkMac#(Clock txClock,
         rule stitch_blocks_together;
             let d <- eth_mac[i].packet_rx.get;
 
+    `ifdef NIC_SIM
+            if (verbose && i == 1)
+                $display("[MAC %d] t = %d recvd = %d %d %x",
+                     host_index, rx_counter, d.sop, d.eop, d.data);
+    `endif
+
+    `ifdef WAIT_FOR_START_SIG
+            /* start signal received */
+            if (num_of_blocks_received_by_mac[i] == 0)
+            begin
+                if (d.sop == 0 && d.eop == 1)
+                begin
+                    start_scheduler_fifo[i].enq(1);
+                    start_counting_fifo[i].enq(1);
+    `ifdef NIC_SIM
+                    if (verbose)
+                        $display("[MAC %d] t = %d Started Scheduler",
+                            host_index, rx_counter);
+    `endif
+                    num_of_blocks_received_by_mac[i]
+                        <= num_of_blocks_received_by_mac[i] + 1;
+                end
+            end
+
+            else
+    `else
             if (True)
+    `endif
             begin
                 num_of_blocks_received_by_mac[i]
                     <= num_of_blocks_received_by_mac[i] + 1;
