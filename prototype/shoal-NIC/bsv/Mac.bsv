@@ -7,6 +7,7 @@ import Clocks::*;
 import DefaultValue::*;
 
 import Params::*;
+import ShaleUtil::*;
 import RingBufferTypes::*;
 
 import AlteraMacWrap::*;
@@ -59,7 +60,7 @@ module mkMac#(Clock txClock,
             Reset rx_reset) (Mac);
 `endif
 
-    Bool verbose = True;
+    Bool verbose = False;
 
     Clock defaultClock <- exposeCurrentClock();
     Reset defaultReset <- exposeCurrentReset();

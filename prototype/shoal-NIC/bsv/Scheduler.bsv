@@ -9,6 +9,7 @@ import DefaultValue::*;
 import Clocks::*;
 
 import Params::*;
+import ShaleUtil::*;
 import SchedulerTypes::*;
 import RingBufferTypes::*;
 import RingBuffer::*;
@@ -19,32 +20,35 @@ import Mac::*;
 
 interface Scheduler;
     // Responses to stats request?
-	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-    //     time_slots_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        time_slots_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     sent_host_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     sent_fwd_pkt_res;
-	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-    //     received_host_pkt_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        received_host_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     received_fwd_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     received_corrupted_pkt_res;
-	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-    //     received_wrong_dst_pkt_res;
-	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-    //     latency_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        received_wrong_dst_pkt_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        latency_res;
+    interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        max_fwd_buffer_length_res;
 
     // // Stats
-    // method Action timeSlotsCount();
+    method Action timeSlotsCount();
 	// method Action sentHostPktCount();
 	// method Action sentFwdPktCount();
-	// method Action receivedHostPktCount();
+	method Action receivedHostPktCount();
 	// method Action receivedFwdPktCount();
 	// method Action receivedCorruptedPktCount();
-	// method Action receivedWrongDstPktCount();
-    // method Action latency();
+	method Action receivedWrongDstPktCount();
+    method Action latency();
+    method Action max_fwd_buffer_length();
 
     method Action start(ServerIndex first_host_index, Bit#(8) t);
     method Action stop();
@@ -63,6 +67,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1))) start_flag <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1))) running <- replicateM(mkReg(0));
 
+    // Clock for stats.
+    Reg#(Bit#(64)) current_time <- mkReg(0);
+    rule clk;
+        current_time <= current_time + 1;
+    endrule
+
     /*------------------------------------------------------------------------------*/
 
                                 /* Init Path */
@@ -70,132 +80,80 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
     /*------------------------------------------------------------------------------*/
 
-    // We need to maintain host index as well as coordinates.
-    // Each node has h coordinates, h = NUM_OF_PHASES.
+    // Node ID for each port.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex)) host_index
         <- replicateM(mkReg(maxBound));
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Reg#(Coordinate)))
-        host_coordinates <- replicateM(replicateM(mkReg(0)));
-
-    // // For each port, populate coordinates once at module start up.
-    // Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1))) is_coordinates_set <- replicateM(mkReg(0));
-    // for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    // begin
-    //     // TODO: add rule condition that host_index is set correctly.
-    //     rule populate_host_coordinates(start_flag[i] == 1 && is_coordinates_set[i] == 0);
-    //         Integer n = valueof(host_index[i]);
-    //         // Loop over coordinates in reverse order.
-    //         for (Integer j = NUM_OF_PHASES-1; j >=0; j = j - 1)
-    //         begin
-    //             // Operators / and % confirmed from B.2.4 of BSV reference guide (pg 162).      
-    //             host_coordinates[i][j] <= fromInteger(n % (valueof(NODES_PER_PHASE)));
-    //             n = n / (valueof(NODES_PER_PHASE));
-    //         end            
-    //     endrule
-    // end
 
     // The schedule is a 3D matrix, indexed by host_idx, phase, slot_within_phase.
     // The table need only contain schedules for the nodes on this device.
 	Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Reg#(ServerIndex))))
         schedule_table <- replicateM(replicateM(replicateM(mkReg(0))));
 
-    // Once on start, set coordinates and load schedule into table for each port.
-    // TODO: This could happen in a single clock cycle right?
+    // For Tx. Destination node of the next local flow we will send out, when there's an opportunity.
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex)) 
+        next_local_flow_idx <- replicateM(mkReg(0));
+
+    // Once on receiving start signal (and therefor host_index), set coordinates and load schedule into table for each port.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1))) is_schedule_set <- replicateM(mkReg(0));
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-        begin
-        rule populate_schedule_table (start_flag[i] = 1 && is_schedule_set == 0);
-            Integer n = valueof(host_index[i]);
-            // Loop over coordinates in reverse order.
-            for (Integer j = NUM_OF_PHASES-1; j >=0; j = j - 1)
-            begin
-                // Operators / and % confirmed from B.2.4 of BSV reference guide (pg 162).      
-                host_coordinates[i][j] <= fromInteger(n % (valueof(NODES_PER_PHASE)));
-                n = n / (valueof(NODES_PER_PHASE));
-            end           
-            
+    begin
+        rule populate_schedule_table (start_flag[i] == 1 && is_schedule_set[i] == 0);
             for (Integer phase = 0; phase < valueof(NUM_OF_PHASES); phase = phase + 1)  // Phase
             begin
                 for (Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)                 // Slot within phase
-                begin
-                    schedule_table[i][phase][j] <= offset_node_in_phase(host_coordinates[i], phase, j);
-                end
+                    schedule_table[i][phase][j] <= offset_node_in_phase(host_index[i], phase, j + 1);
             end
 
             // Init round robin for local flows to send.
-            next_local_flow_idx[i] = fromInteger((i + 1) % NUM_OF_SERVERS);
+            next_local_flow_idx[i] <= fromInteger((i + 1) % valueof(NUM_OF_SERVERS));
 
-            is_schedule_set <= 1;
+            is_schedule_set[i] <= 1;
             
             // State is initialized, so now this port may run rx / tx / reconfig.
+            if (verbose)
+                $display("[SCHED %d] Init finished at abs time %d",host_index[i], current_time);
             running[i] <= 1;
         endrule
     end
 
-    // ------------ Helper functions for coordinate math ------------
-    
-    // Given a node as its coordinates, a phase and an offset, apply the offset to the node's index within the phase (wrapping around),
-    // and return the index of that node. For example, for (0,0,1) in phase 2 with 2 nodes per phase, the node for offset 1
-    // will have coordinates (0,0,0), and function returns the index 0. 
-    // TODO: Can you pass a vector to a fucntion like this?
-    function ServerIndex offset_node_in_phase(Vector#(NUM_OF_PHASES, Reg#(Coordinate)) coordinates, Integer phase, Integer offset);
-        Integer node = 0;
-        Integer k = 1;
-        // TODO: Check that Integer doesn't overflow and ops are correct.
-        for (Integer coord_idx = valueof(NUM_OF_PHASES) - 1; coord_idx >= 0; coord_idx = coord_idx - 1)
-        begin
-            Integer c = fromInteger(coordinates[coord_idx]);
-            if (phase == coord_idx)
-                c = (c + offset) % valueof(NODES_PER_PHASE);
-            node += (c * k);
-            k = k * NODES_PER_PHASE; 
-        end
-        return fromInteger(node);
-    endfunction
-
-    // Get the first node in the phase group of a given node in the given phase. Return its host index.
-    // TODO: If the number of phases (h) was a power of 2, this could be simplified & optimized.
-    // Power function ** confirmed from BSV ref guide B.1.6 (pg 153), Integer is a subclass of Arith.
-    function ServerIndex get_lowest_node_id_in_phase(Integer node_id, Integer phase);
-        Integer lowest = node_id - (node_id % (valueof(NODES_PER_PHASE) ** (phase + 1))) ;   // all coords to the left of phase remain the same, others 0 
-        lowest = lowest + (node_id % (valueof(NODES_PER_PHASE) ** phase));                   // all coords to the right of phase remain the same 
-        return fromInteger(lowest);
-    endfunction
-
     /* ---------------- Stats ----------------- */
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) time_slots_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) time_slots_fifo
+	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_host_pkt_fifo
 	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_fwd_pkt_fifo
 	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_host_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_host_pkt_fifo
+	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_fwd_pkt_fifo
 	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_corrupted_pkt_fifo
 	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_wrong_dst_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) latency_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_wrong_dst_pkt_fifo
+	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) latency_fifo
+	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+    Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) buffer_length_fifo
+	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) num_of_time_slots_used_reg
-    //     <- replicateM(mkReg(0));
+	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) num_of_time_slots_used_reg
+        <- replicateM(mkReg(0));
 	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) host_pkt_transmitted_reg
     //     <- replicateM(mkReg(0));
 	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) non_host_pkt_transmitted_reg
     //     <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-    //     num_of_host_pkt_received_reg <- replicateM(mkReg(0));
+	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+        num_of_host_pkt_received_reg <- replicateM(mkReg(0));
 	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
     //     num_of_fwd_pkt_received_reg <- replicateM(mkReg(0));
 	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
     //     num_of_corrupted_pkt_received_reg <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-    //     num_of_wrong_dst_pkt_received_reg <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-    //     latency_reg <- replicateM(mkReg(0));
+	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+        num_of_wrong_dst_pkt_received_reg <- replicateM(mkReg(0));
+	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+        latency_reg <- replicateM(mkReg(0));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+        max_fwd_buffer_length_reg <- replicateM(mkReg(0));
 
 /*------------------------------------------------------------------------------*/
 
@@ -203,12 +161,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             /* 1 cycle to reconfigure, executes every timeslot_len cycles */
 
 /*------------------------------------------------------------------------------*/
-
-    // Clock for stats.
-    Reg#(Bit#(64)) current_time <- mkReg(0);
-    rule clk;
-        current_time <= current_time + 1;
-    endrule
 
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
         clock_within_timeslot <- replicateM(mkReg(0));
@@ -223,6 +175,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex))
         current_neighbor <- replicateM(mkReg(maxBound));
 
+    // Signal FIFO to trigger choice of cell to send.
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS, FIFO#(void)))
+        choose_buffer_to_send_from_fifo <- replicateM(replicateM(mkFIFO));
+
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
         
@@ -231,7 +187,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         // the tx cell for the time slot. At the end of a timeslot, it increments the time slot and optionally 
         // the phase & epoch.
         // TODO: In Shoal, the timeslot is incremented when the clock is 0, and the neighbor is also reset.
-        // But this means that the first timeslot ever (=0) never executes. Verify?
+        // But because the new timeslot will reflect in the next clock cycle, it correctly sets neighbor for
+        // current timeslot. BUT if the time_slot value is used by other rules (it isn't currently), 
+        // this will be +1 of the current time slot? 
         rule set_current_timeslot (running[i] == 1 && is_schedule_set[i] == 1);
         
             if (clock_within_timeslot[i] == 0)        // New timeslot
@@ -241,12 +199,14 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 [current_phase[i]][current_timeslot[i]];
                     current_neighbor[i] <= d;
 
+                    num_of_time_slots_used_reg[i] <= num_of_time_slots_used_reg[i] + 1;
+
                     if (verbose && host_index[i] == 0)
-                        $display("[SCHED %d] New time slot set timeslot = %d dst = %d ",
-                            host_index[i], current_timeslot[i], current_neighbor[i]);
+                        $display("[SCHED %d] New time slot at abs time %d. Set phase = %d timeslot = %d dst = %d ",
+                            host_index[i], current_time, current_phase[i], current_timeslot[i], d);
 
                     // Choose whether to send local or remote cells in this timeslot.
-                    choose_buffer_to_send_from_fifo[i][j].enq(?);
+                    choose_buffer_to_send_from_fifo[i][d].enq(?);
                 end
             
             // Timelsot ends after current cycle.
@@ -283,15 +243,14 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // State to determine next cell to send.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(BufType))
         buffer_to_send_from <- replicateM(mkReg(HOST));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex))
+        host_flow_to_send <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, FIFO#(ReadResType))
         cell_to_send_fifo <- replicateM(mkSizedFIFO(2));
     
     // Header for outgoing cells. 
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(HEADER_SIZE)))
         curr_header <- replicateM(mkReg(0));
-
-    // Destination node of the next local flow we will send out, when there's an opportunity.
-    Vector#(NUM_OF_ALTERA_PORTS, ServerIndex) next_local_flow_idx;
 
     // Tx rules for each port.
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
@@ -309,24 +268,23 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             // Get local cells for next local flow to send.
             rule request_local_cell (running[i] == 1 && clock_within_timeslot[i] == 2
                             && buffer_to_send_from[i] == HOST
-                            && next_local_flow_idx[i] == fromInteger(j));
+                            && host_flow_to_send[i] == fromInteger(j));        
                 cell_generator[i].host_cell_req[j].put(?);
-                next_local_flow_idx[i] = (next_local_flow_idx[i] + 1) % NUM_OF_SERVERS;
-                // Won't send to self.
-                if (next_local_flow_idx[i] == i)
-                    next_local_flow_idx[i] = (next_local_flow_idx[i] + 1) % NUM_OF_SERVERS;
             endrule
 
+            // This rule may multiple times, as for each host cell request, the generator responds with
+            // packets of size BUS_WIDTH. So, each request triggers this rule CELL_SIZE/BUS_WIDTH times.
+            // Same for FWD cell requests.
+            // TODO: Should we check that all packets of the cell are transmitted to the same (correct) neighbor.
             rule get_local_cell;
-                // TODO: Make sure cell generator gives cells with proper header and spraying hops = h.
-                let d <- cell_generator[i].host_cell_res[j].get;
+                let d <- cell_generator[i].host_cell_res[j].get;          
                 cell_to_send_fifo[i].enq(d);
             endrule
 
             // Get cell to send from FWD buffer of current neighbor.
             rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 2
                             && buffer_to_send_from[i] == FWD
-                            && current_neighbor[i] == fromInteger(j));
+                            && current_neighbor[i] == fromInteger(j));              
                 fwd_buffer[i][j].read_request.put(makeReadReq(READ));
             endrule
 
@@ -336,46 +294,66 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             endrule
         end
 
-        // rule req_dummy_cell (start_flag[i] == 1 && clock_within_timeslot[i] == 2
-        //                 && buffer_to_send_from[i] == DUMMY);
-        //     cell_generator[i].dummy_cell_req.put(?);
-        // endrule
+        // Stat collection for buffer lengths
+        rule get_max_buffer_len (running[i] == 1);
+            Bit#(64) total_fwd_buf_len = 0;
+            for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
+            begin
+                total_fwd_buf_len = total_fwd_buf_len + 
+                                    fwd_buffer[i][j].elements;    
+            end
+            if(total_fwd_buf_len > max_fwd_buffer_length_reg[i])
+                max_fwd_buffer_length_reg[i] <= total_fwd_buf_len;
+        endrule
 
-        // rule get_dummy_cell;
-        //     let d <- cell_generator[i].dummy_cell_res.get;
-        //     cell_to_send_fifo[i].enq(d);
-        // endrule
+        rule req_dummy_cell (running[i] == 1 && clock_within_timeslot[i] == 2
+                        && buffer_to_send_from[i] == DUMMY);
+            if (verbose)
+                $display("[SCHED %d] Requesting dummy cell", host_index[i]);
+            cell_generator[i].dummy_cell_req.put(?);
+        endrule
+
+        rule get_dummy_cell;
+            let d <- cell_generator[i].dummy_cell_res.get;
+            if (verbose)
+                $display("[SCHED %d] Enqueuing dummy cell", host_index[i]);
+            cell_to_send_fifo[i].enq(d);
+        endrule
 
         // Rule to actually send by forwarding cell to lower layers. Only fires once we enq to cell_to_send_fifo.
         rule send_cell (running[i] == 1);
             let d <- toGet(cell_to_send_fifo[i]).get;
 
-            if (verbose && host_index[i] == 0)
-                $display("[SCHED %d] Sending cell at timeslot = %d to dst = %d ",
-                    host_index[i], current_timeslot[i], current_neighbor[i]);
+            ServerIndex dst_ip = d.data.payload[484:476];
+            Bit#(14) seq_num = d.data.payload[472:459];
 
-            // Bit#(HEADER_SIZE) h = curr_header[i];
-            // if (d.data.sop == 1)
-            // begin
-            //     Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
-            //     Integer s = valueof(BUS_WIDTH) - 1;
-            //     Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
-            //     h = d.data.payload[s:e] | x;
-            //     curr_header[i] <= h;
-            // end
+            Bit#(HEADER_SIZE) h = curr_header[i];
+            if (d.data.sop == 1)
+            begin
+                Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
+                Integer s = valueof(BUS_WIDTH) - 1;
+                Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                h = d.data.payload[s:e] | x;
+                curr_header[i] <= h;
+            end
 
-            // if (d.data.eop == 1)
-            //     d.data.payload = {h, h, h, h, h, h, h, current_time};
-            // else
-            //     d.data.payload = {h, h, h, h, h, h, h, h};
+            // Set mac layer information in header
+            // TODO: Was Vishal doing this??
+            h[63:55] = host_index[i];         // src_mac
+            h[54:46] = current_neighbor[i];   // dst_mac
+            h[27:25] = current_phase[i];      // src_mac_phase
 
-            // // Put to MAC interface.
-            // mac.mac_tx_write_req[i].put(d.data);
+            if (d.data.eop == 1)
+                d.data.payload = {h, h, h, h, h, h, h, current_time};
+            else
+                d.data.payload = {h, h, h, h, h, h, h, h};
 
-            // if (verbose && host_index[i] == 0)
-            //     $display("[SCHED %d] t = %d dst = %d seq = %d sent = %d %d %x",
-            //         host_index[i], 0, current_neighbor[i], d.data.payload[475:460],
-            //         d.data.sop, d.data.eop, d.data.payload);
+            // Put to MAC interface.
+            mac.mac_tx_write_req[i].put(d.data);
+
+            if (verbose)
+                $display("[SCHED %d] Sending cell dst = %d seq_num=%d sop = %d eop = %d to neighbor %d at time %d",
+                    host_index[i], dst_ip, seq_num ,d.data.sop, d.data.eop, current_neighbor[i], current_time);
         endrule
     end
 
@@ -403,142 +381,195 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         curr_cell_size <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Phase)) 
         curr_remaining_spray_hops <- replicateM(mkReg(0));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Phase)) 
+        curr_src_mac_phase <- replicateM(mkReg(0));
 
-    // for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    // begin
-    //     rule receive_cell (start_flag[i] == 1);
-    //         // Get from MAC interface
-    //         let d <- mac.mac_rx_read_res[i].get;
+    // Module to pick spraying hops.
+    RandomHopGenerator rng_hop <-mkRandomHopGenerator;
 
-    //         ServerIndex src_mac = curr_src_mac[i];
-    //         ServerIndex dst_mac = curr_dst_mac[i];
-    //         ServerIndex src_ip = curr_src_ip[i];
-    //         ServerIndex dst_ip = curr_dst_ip[i];
-    //         Phase remaining_spraying_hops = curr_remaining_spray_hops[i];
-    //         Bit#(1) dummy_bit = curr_dummy_bit[i];
+    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    begin
+        rule receive_cell (running[i] == 1);
+            // Get from MAC interface
+            let d <- mac.mac_rx_read_res[i].get;
 
-    //         Bit#(HEADER_SIZE) hd = curr_rx_header[i];
+            ServerIndex src_mac = curr_src_mac[i];
+            ServerIndex dst_mac = curr_dst_mac[i];
+            ServerIndex src_ip = curr_src_ip[i];
+            ServerIndex dst_ip = curr_dst_ip[i];
+            Phase src_mac_phase = curr_src_mac_phase[i];
+            Phase remaining_spraying_hops = curr_remaining_spray_hops[i];
+            Bit#(1) dummy_bit = curr_dummy_bit[i];
 
-    //         Bit#(1) corrupted_cell = curr_corrupted_cell[i];
+            Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
-    //         // All the indicies assume BUS_WIDTH of 512; change them if you change
-    //         // BUS_WIDTH
+            Bit#(1) corrupted_cell = curr_corrupted_cell[i];
 
-    //         Bit#(16) cell_size_cnt = curr_cell_size[i];
+            // All the indicies assume BUS_WIDTH of 512; change them if you change
+            // BUS_WIDTH
 
-    //         if (d.sop == 1)
-    //         begin
-    //             corrupted_cell = 0;
-    //             src_mac = d.payload[511:503];
-    //             dst_mac = d.payload[502:494];
-    //             src_ip = d.payload[493:485];
-    //             dst_ip = d.payload[484:476];
-    //             remaining_spraying_hops = d.payload[something]      // TODO: re-define header for Shale.
-    //             dummy_bit = d.payload[448];
+            Bit#(16) cell_size_cnt = curr_cell_size[i];
 
-    //             curr_src_mac[i] <= src_mac;
-    //             curr_dst_mac[i] <= dst_mac;
-    //             curr_src_ip[i] <= src_ip;
-    //             curr_dst_ip[i] <= dst_ip;
-    //             curr_dummy_bit[i] <= dummy_bit;
+            if (d.sop == 1)
+            begin
+                corrupted_cell = 0;
+                src_mac = d.payload[511:503];
+                dst_mac = d.payload[502:494];
+                src_ip = d.payload[493:485];
+                dst_ip = d.payload[484:476];
+                src_mac_phase = d.payload[475:473];
+                remaining_spraying_hops = d.payload[458:456];
+                dummy_bit = d.payload[448];
 
-    //             hd = d.payload[511:448];
-    //             curr_rx_header[i] <= hd;
+                curr_src_mac[i] <= src_mac;
+                curr_dst_mac[i] <= dst_mac;
+                curr_src_ip[i] <= src_ip;
+                curr_dst_ip[i] <= dst_ip;
+                curr_src_mac_phase[i] <= src_mac_phase;
+                curr_remaining_spray_hops[i] <= remaining_spraying_hops;
+                curr_dummy_bit[i] <= dummy_bit;
 
-    //             // if (dst_mac != host_index[i])
-    //             //     num_of_wrong_dst_pkt_received_reg[i]
-    //             //         <= num_of_wrong_dst_pkt_received_reg[i] + 1;
+                hd = d.payload[511:448];
+                curr_rx_header[i] <= hd;
 
-    //             cell_size_cnt = fromInteger(valueof(BUS_WIDTH));
-    //             curr_cell_size[i] <= cell_size_cnt;
-    //         end
-    //         else
-    //         begin
-    //             cell_size_cnt = cell_size_cnt + fromInteger(valueof(BUS_WIDTH));
-    //             curr_cell_size[i] <= cell_size_cnt;
-    //         end
+                if (dst_mac != host_index[i])
+                begin
+                    if (verbose)
+                        $display("[SCHED %d] GOT WRONG PKT: src_mac=%d dst_mac=%d src_mac_phase=%d", 
+                                    host_index[i], src_mac, dst_mac, src_mac_phase);
+                    corrupted_cell = 1;
+                    num_of_wrong_dst_pkt_received_reg[i]
+                        <= num_of_wrong_dst_pkt_received_reg[i] + 1;
+                end
 
-    //         // ------------- Check for corruption + deliver, completely taken from Shoal ------------
+                cell_size_cnt = fromInteger(valueof(BUS_WIDTH));
+                curr_cell_size[i] <= cell_size_cnt;
+            end
+            else
+            begin
+                cell_size_cnt = cell_size_cnt + fromInteger(valueof(BUS_WIDTH));
+                curr_cell_size[i] <= cell_size_cnt;
+            end
 
-    //         //assumes header size of 64 and BUS_WIDTH of 512
-    //         Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd, hd, hd};
+            // ------------- Check for corruption + deliver, completely taken from Shoal ------------
+            // TODO: Fix all hard-coded indices, define these in RingBufferTypes? 
 
-    //         if (corrupted_cell == 0)
-    //         begin
-    //             if (d.eop == 0)
-    //             begin
-    //                 if (d.payload != c)
-    //                 begin
-    //                     corrupted_cell = 1;
-    //                     // num_of_corrupted_pkt_received_reg[i]
-    //                     //     <= num_of_corrupted_pkt_received_reg[i] + 1;
-    //                 end
-    //             end
-    //             else if (d.eop == 1)
-    //             begin
-    //                 if (cell_size_cnt != fromInteger(valueof(CELL_SIZE))
-    //                     || d.payload[511:64] != c[511:64])
-    //                 begin
-    //                     corrupted_cell = 1;
-    //                     // num_of_corrupted_pkt_received_reg[i]
-    //                     //     <= num_of_corrupted_pkt_received_reg[i] + 1;
-    //                 end
+            // TODO: Assumes header size of 64 and BUS_WIDTH of 512, fixfor different values of these.
+            Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd, hd, hd};
 
-    //                 // Bit#(64) t = d.payload[63:0];
-    //                 // if (t != 0 && latency_reg[i] == 0)
-    //                 //     latency_reg[i] <= current_time - t;
+            if (corrupted_cell == 0)
+            begin
+                if (d.eop == 0)
+                begin
+                // For every packet except last, cell is set to repeated header blocks (in tx path).
+                // If this doesn't match what is receied, packet is corrupted.
+                    if (d.payload != c)
+                    begin
+                        corrupted_cell = 1;
+                        // num_of_corrupted_pkt_received_reg[i]
+                        //     <= num_of_corrupted_pkt_received_reg[i] + 1;
+                    end
+                end
+                else if (d.eop == 1)
+                begin
+                // For last packet, only the last BITS_PER_CYCLE bits will be set to time of sending instead of header, check everything else.
+                    if (cell_size_cnt != fromInteger(valueof(CELL_SIZE))
+                        || d.payload[511:64] != c[511:64])
+                    begin
+                        corrupted_cell = 1;
+                        if(verbose)
+                            $display("[SCHED %d] GOT CORRUPTED PKT payload=%x   c=%x", host_index[i], d.payload[511:64], c[511:64]);
+                        // num_of_corrupted_pkt_received_reg[i]
+                        //     <= num_of_corrupted_pkt_received_reg[i] + 1;
+                    end
 
-    //                 if (corrupted_cell == 0 && dummy_bit == 0)
-    //                 begin
-    //                     if (dst_ip == host_index[i])
-    //                         num_of_host_pkt_received_reg[i]
-    //                             <= num_of_host_pkt_received_reg[i] + 1;
-    //                     // else
-    //                     //     num_of_fwd_pkt_received_reg[i]
-    //                     //         <= num_of_fwd_pkt_received_reg[i] + 1;
-    //                 end
-    //             end
-    //         end
+                    if (corrupted_cell == 0 && dummy_bit == 0)
+                    begin
+                        // Collect latency stats for the cell for a single hop at MAC layer (time_recvd - time_sent).
+                        // This one-way delay could be skewed for different clocks at different FPGA boards without clock sync. 
+                        // TODO: Shoal was counting corrupted packets towards latency stats as well? Also, only one data point, not agg.
+                        Bit#(64) send_time = d.payload[63:0];
+                        Bit#(64) latency = current_time - send_time;
+                        if (send_time != 0 && latency_reg[i] == 0)
+                            latency_reg[i] <= latency;
 
-    //         curr_corrupted_cell[i] <= corrupted_cell;
+                        if (verbose)
+                        begin
+                            $display("[SCHED %d] Received cell with src_mac=%d; src_ip=%d; dst_ip=%d; src_mac_phase=%d; seq_num=%x latency=%d cycles at phase=%d; send_time=%d; recv_time=%d",
+                                        host_index[i], src_mac, src_ip, dst_ip, src_mac_phase, hd[24:11], latency, current_phase[i], send_time, current_time);
+                        end
+                        if (dst_ip == host_index[i])
+                            num_of_host_pkt_received_reg[i]
+                                <= num_of_host_pkt_received_reg[i] + 1;
+                        // else
+                        //     num_of_fwd_pkt_received_reg[i]
+                        //         <= num_of_fwd_pkt_received_reg[i] + 1;
+                    end
+                end
+            end
 
-    //         // ------------------------------------------------------------------------------
+            curr_corrupted_cell[i] <= corrupted_cell;
+
+            // --------------------------- Forwarding Logic ------------------------------
 
 
-    //         // Put cells to forward in appropriate buffers.
-    //         if (corrupted_cell == 0 && dummy_bit == 0 && dst_ip != host_index[i])
-    //         begin
-    //             ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
-    //             if (remaining_spraying_hops > 0)
-    //             begin
-    //                 Phase next_phase = (valueof(current_phase) + 1) % fromInteger(NUM_OF_PHASES);
-    //                 // TODO: Use LFSRs to generate random numbers. (?)
-    //                 next_hop = schedule_table[i][next_phase][rand(PHASE_SIZE)]
-    //                 remaining_spraying_hops = remaining_spraying_hops - 1
-    //                 // TODO: In d.payload set spraying hops
-    //             end
-    //             else
-    //             begin
-    //                 Integer next_phase = valueof(current_phase);
-    //                 for (Integer phase = 0; phase < NUM_OF_PHASES; phase = phase + 1)
-    //                 begin
-    //                     next_phase = (valueof(next_phase) + 1) % valueof(NUM_OF_PHASES);
-    //                     if (next_hop == fromInteger(valueof(NUM_OF_SERVERS) + 1) &&
-    //                          get_coordinate(dst_ip, next_phase) != host_coordinates[i][next_phase]) 
-    //                         next_hop = get_node_with_matching_coordinate(dst_ip, next_phase);
-    //                 end
-    //             end
-    //             if (!fwd_buffer[i][next_hop].full)
-    //                 fwd_buffer[i][next_hop].write_request.put
-    //                     (makeWriteReq(d.sop, d.eop, d.payload));
-    //             // else pkt drop. TODO: instead of random, pick buffer with space.
-    //         end
+            // Put cells to forward in appropriate buffers.
+            // TODO: Fix use of valueof and Integer here!
+            if (corrupted_cell == 0 && dummy_bit == 0 && dst_ip != host_index[i])
+            begin
+                
+                
 
-    //         if (verbose && host_index[i] == 1)
-    //             $display("[SCHED %d] recvd = %d %d %x dst_mac = %d dst_ip = %d",
-    //                 host_index[i], d.sop, d.eop, d.payload, dst_mac, dst_ip);
-    //     endrule
-    // end
+                ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
+                if (remaining_spraying_hops > 0)
+                begin
+                    Bit#(3) spray_slot = 0;
+                    Phase next_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
+                    
+                    // We only need to select random hop if there is more than one hop possible.
+                    if (valueof(PHASE_SIZE) > 1)
+                    begin  
+                        spray_slot <- rng_hop.get;
+                    end
+                    next_hop = schedule_table[i][next_phase][spray_slot];
+                    remaining_spraying_hops = remaining_spraying_hops - 1;
+                    d.payload[458:456] = remaining_spraying_hops;
+                    if (verbose)
+                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d remaining spraying hops=%d on phase %d", 
+                            host_index[i], next_hop, remaining_spraying_hops, next_phase);
+                end
+                else
+                begin
+                    // Find next phase where my coordinates don't match with the destination.
+                    // TODO: Fix hard-code for next phase init.
+                    Integer next_phase = 0;
+                    if (src_mac_phase == 1) next_phase = 1;
+                    if (src_mac_phase == 2) next_phase = 2;
+
+                    for (Integer phase = 0; phase < valueof(NUM_OF_PHASES); phase = phase + 1)
+                    begin
+                        next_phase = (next_phase + 1) % valueof(NUM_OF_PHASES);
+                        Coordinate dst_coord = get_coordinate(dst_ip, next_phase);
+                        Coordinate my_coord = get_coordinate(host_index[i], next_phase);
+                        // If next hop not yet found, and phase coordinate doesn't match me, only then set.
+                        if (next_hop == fromInteger(valueof(NUM_OF_SERVERS) + 1) &&
+                            dst_coord != my_coord) 
+                        begin
+                            next_hop = get_node_with_matching_coordinate(host_index[i], dst_coord, next_phase);
+                            if (verbose)
+                                $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d", 
+                                        host_index[i], next_hop, next_phase, dst_ip);
+                        end
+                    end
+                end
+                if (!fwd_buffer[i][next_hop].full)
+                    fwd_buffer[i][next_hop].write_request.put
+                        (makeWriteReq(d.sop, d.eop, d.payload));
+                else $display("[SCHED %d] FWD BUFFER FULL!!", host_index[i]);
+            end
+
+        endrule
+    end
 
 /*------------------------------------------------------------------------------*/
 
@@ -546,15 +577,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
 /*------------------------------------------------------------------------------*/
 
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS, FIFO#(void)))
-        choose_buffer_to_send_from_fifo <- replicateM(replicateM(mkFIFO));
-
     // For each src dst pair, rule for choosing cell to send between src-dst.
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
         for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
         begin
 
+            // TODO: We do need dummy cells when no local flows either. Also, to select local flow,
+            // we want to pick the next flow in round robin that has cells to send. Giceb that we 
+            // currently just pick HOST and assume HOST cells exist, this will have to change significantly,  
             rule choose_buffer_to_send_from;
                 let d <- toGet(choose_buffer_to_send_from_fifo[i][j]).get;
 
@@ -562,12 +593,66 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 if (!fwd_buffer[i][j].empty)
                 begin
                     buffer_to_send_from[i] <= FWD;
+                    if (verbose)
+                        $display("[SCHED %d] chose to send FWD cell.", host_index[i]);
                 end
-                // Then send any local flows. 
-                // TODO: I don't think there is a requirement for dummy cells here?
+
+                // Then send any local flows that are ready, else send dummy flows. 
                 else
-                begin
-                    buffer_to_send_from[i] <= HOST;
+                begin                    
+                    // ------- pick host flow to send -----------
+                    // Initialize dst with next_local_flow_idx[i]
+                    // TODO: No easy way to convert from ServerIndex to dst?
+                    Integer dst = 0;
+                    for(Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
+                        if (next_local_flow_idx[i] == fromInteger(k))
+                            dst = k;
+                    
+                    ServerIndex host_flow_chosen = fromInteger(valueof(NUM_OF_SERVERS)) + 1;
+                    for(Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
+                    begin
+                        if (!cell_generator[i].isEmpty(dst) && dst != i &&
+                            host_flow_chosen == fromInteger(valueof(NUM_OF_SERVERS) + 1))
+                            host_flow_chosen = fromInteger(dst);
+                        dst = (dst + 1) % valueof(NUM_OF_SERVERS);
+                    end
+                    // ========================================
+                    // If we were to use PIEO here:
+
+                    // // does NULL exist in BSV??
+                    // Flow f = local_flow_queue.dequeue();
+                    // if (f != NULL)
+                    // begin 
+                    //     f.rank = last rank  // might not need to set this
+                    //     // how to set eligibility??
+                    //     local_flow_queue.enqueue(f);
+                    // end
+                    // else dummy cell
+
+                    // ----------------------------------------
+
+                    // At least one host flow was ready to be sent, so will choose HOST.
+                    if (host_flow_chosen != fromInteger(valueof(NUM_OF_SERVERS) + 1))
+                    begin
+                        if (verbose)
+                            $display("[SCHED %d] chose to send HOST cell.", host_index[i]);
+                        buffer_to_send_from[i] <= HOST;
+                        host_flow_to_send[i] <= host_flow_chosen;
+
+                        // Set host flow index for next turn. Check to not send to self.
+                        ServerIndex next_flow_idx = (host_flow_chosen + 1) % fromInteger(valueof(NUM_OF_SERVERS));
+                        if (next_flow_idx == fromInteger(i))
+                            next_local_flow_idx[i] <= (next_flow_idx + 1) % fromInteger(valueof(NUM_OF_SERVERS));
+                        else
+                            next_local_flow_idx[i] <= next_flow_idx;
+                    end
+
+                    else
+                    begin
+                        if (verbose)
+                            $display("[SCHED %d] chose to send dummy cell.", host_index[i]);
+                        buffer_to_send_from[i] <= DUMMY;
+                    end
                 end
 
             endrule
@@ -598,26 +683,28 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     end
 `endif
 
-    // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp1;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp1;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp2;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp3;
-    // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp4;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp4;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp5;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp6;
-    // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp7;
-    // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp8;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp7;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp8;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp9;
 
-    // for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    // begin
-    //     temp1[i] = toGet(time_slots_fifo[i]);
+    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    begin
+        temp1[i] = toGet(time_slots_fifo[i]);
     //     temp2[i] = toGet(sent_host_pkt_fifo[i]);
     //     temp3[i] = toGet(sent_fwd_pkt_fifo[i]);
-    //     temp4[i] = toGet(received_host_pkt_fifo[i]);
+        temp4[i] = toGet(received_host_pkt_fifo[i]);
     //     temp5[i] = toGet(received_fwd_pkt_fifo[i]);
     //     temp6[i] = toGet(received_corrupted_pkt_fifo[i]);
-    //     temp7[i] = toGet(received_wrong_dst_pkt_fifo[i]);
-    //     temp8[i] = toGet(latency_fifo[i]);
-    // end
+        temp7[i] = toGet(received_wrong_dst_pkt_fifo[i]);
+        temp8[i] = toGet(latency_fifo[i]);
+        temp9[i] = toGet(buffer_length_fifo[i]);
+    end
 
     // Should prob change name from first_host_index to fpga_idx or altera_idx
     method Action start(ServerIndex first_host_index, Bit#(8) t);
@@ -634,14 +721,17 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
     method Action stop();
         for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+        begin
             start_flag[i] <= 0;
+            running[i] <= 0;
+        end
     endmethod
 
     // Stat Methods
-    // method Action timeSlotsCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         time_slots_fifo[i].enq(num_of_time_slots_used_reg[i]);
-    // endmethod
+    method Action timeSlotsCount();
+        for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+            time_slots_fifo[i].enq(num_of_time_slots_used_reg[i]);
+    endmethod
 
 	// method Action sentHostPktCount();
     //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
@@ -653,10 +743,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     //         sent_fwd_pkt_fifo[i].enq(non_host_pkt_transmitted_reg[i]);
 	// endmethod
 
-	// method Action receivedHostPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         received_host_pkt_fifo[i].enq(num_of_host_pkt_received_reg[i]);
-	// endmethod
+	method Action receivedHostPktCount();
+        for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+            received_host_pkt_fifo[i].enq(num_of_host_pkt_received_reg[i]);
+	endmethod
 
 	// method Action receivedFwdPktCount();
     //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
@@ -669,23 +759,29 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     //             (num_of_corrupted_pkt_received_reg[i]);
 	// endmethod
 
-	// method Action receivedWrongDstPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         received_wrong_dst_pkt_fifo[i].enq
-    //             (num_of_wrong_dst_pkt_received_reg[i]);
-	// endmethod
+	method Action receivedWrongDstPktCount();
+        for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+            received_wrong_dst_pkt_fifo[i].enq
+                (num_of_wrong_dst_pkt_received_reg[i]);
+	endmethod
 
-	// method Action latency();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         latency_fifo[i].enq(latency_reg[i]);
-	// endmethod
+	method Action latency();
+        for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+            latency_fifo[i].enq(latency_reg[i]);
+	endmethod
 
-	// interface Get time_slots_res = temp1;
+    method Action max_fwd_buffer_length();
+        for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+            buffer_length_fifo[i].enq(max_fwd_buffer_length_reg[i]);
+    endmethod
+
+	interface Get time_slots_res = temp1;
 	// interface Get sent_host_pkt_res = temp2;
 	// interface Get sent_fwd_pkt_res = temp3;
-	// interface Get received_host_pkt_res = temp4;
+	interface Get received_host_pkt_res = temp4;
 	// interface Get received_fwd_pkt_res = temp5;
 	// interface Get received_corrupted_pkt_res = temp6;
-	// interface Get received_wrong_dst_pkt_res = temp7;
-	// interface Get latency_res = temp8;
+	interface Get received_wrong_dst_pkt_res = temp7;
+	interface Get latency_res = temp8;
+    interface Get max_fwd_buffer_length_res = temp9;
 endmodule

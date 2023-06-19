@@ -105,11 +105,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
         fire_send_tx_port_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_tx_port_0_stats_from_sw;
-        let d <- sw.tx_port_stats_res[0].get;
-        tx_port_stats[0] <= d;
-        fire_send_tx_port_stats_to_connectal[0] <= 1;
-    endrule
+    // rule get_tx_port_0_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[0].get;
+    //     tx_port_stats[0] <= d;
+    //     fire_send_tx_port_stats_to_connectal[0] <= 1;
+    // endrule
 
     rule send_tx_port_0_stats_to_connectal
             (fire_send_tx_port_stats_to_connectal[0] == 1);
@@ -120,11 +120,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         tx_port_stats[0].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_1_stats_from_sw;
-        let d <- sw.tx_port_stats_res[1].get;
-        tx_port_stats[1] <= d;
-        fire_send_tx_port_stats_to_connectal[1] <= 1;
-    endrule
+    // rule get_tx_port_1_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[1].get;
+    //     tx_port_stats[1] <= d;
+    //     fire_send_tx_port_stats_to_connectal[1] <= 1;
+    // endrule
 
     rule send_tx_port_1_stats_to_connectal
             (fire_send_tx_port_stats_to_connectal[1] == 1);
@@ -135,11 +135,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         tx_port_stats[1].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_2_stats_from_sw;
-        let d <- sw.tx_port_stats_res[2].get;
-        tx_port_stats[2] <= d;
-        fire_send_tx_port_stats_to_connectal[2] <= 1;
-    endrule
+    // rule get_tx_port_2_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[2].get;
+    //     tx_port_stats[2] <= d;
+    //     fire_send_tx_port_stats_to_connectal[2] <= 1;
+    // endrule
 
     rule send_tx_port_2_stats_to_connectal
             (fire_send_tx_port_stats_to_connectal[2] == 1);
@@ -150,11 +150,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         tx_port_stats[2].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_3_stats_from_sw;
-        let d <- sw.tx_port_stats_res[3].get;
-        tx_port_stats[3] <= d;
-        fire_send_tx_port_stats_to_connectal[3] <= 1;
-    endrule
+    // rule get_tx_port_3_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[3].get;
+    //     tx_port_stats[3] <= d;
+    //     fire_send_tx_port_stats_to_connectal[3] <= 1;
+    // endrule
 
     rule send_tx_port_3_stats_to_connectal
             (fire_send_tx_port_stats_to_connectal[3] == 1);
@@ -170,11 +170,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
         fire_send_rx_port_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_rx_port_0_stats_from_sw;
-        let d <- sw.rx_port_stats_res[0].get;
-        rx_port_stats[0] <= d;
-        fire_send_rx_port_stats_to_connectal[0] <= 1;
-    endrule
+    // rule get_rx_port_0_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[0].get;
+    //     rx_port_stats[0] <= d;
+    //     fire_send_rx_port_stats_to_connectal[0] <= 1;
+    // endrule
 
     rule send_rx_port_0_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[0] == 1);
@@ -185,11 +185,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         rx_port_stats[0].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_1_stats_from_sw;
-        let d <- sw.rx_port_stats_res[1].get;
-        rx_port_stats[1] <= d;
-        fire_send_rx_port_stats_to_connectal[1] <= 1;
-    endrule
+    // rule get_rx_port_1_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[1].get;
+    //     rx_port_stats[1] <= d;
+    //     fire_send_rx_port_stats_to_connectal[1] <= 1;
+    // endrule
 
     rule send_rx_port_1_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[1] == 1);
@@ -200,11 +200,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         rx_port_stats[1].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_2_stats_from_sw;
-        let d <- sw.rx_port_stats_res[2].get;
-        rx_port_stats[2] <= d;
-        fire_send_rx_port_stats_to_connectal[2] <= 1;
-    endrule
+    // rule get_rx_port_2_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[2].get;
+    //     rx_port_stats[2] <= d;
+    //     fire_send_rx_port_stats_to_connectal[2] <= 1;
+    // endrule
 
     rule send_rx_port_2_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[2] == 1);
@@ -215,11 +215,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
                                         rx_port_stats[2].cells);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_3_stats_from_sw;
-        let d <- sw.rx_port_stats_res[3].get;
-        rx_port_stats[3] <= d;
-        fire_send_rx_port_stats_to_connectal[3] <= 1;
-    endrule
+    // rule get_rx_port_3_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[3].get;
+    //     rx_port_stats[3] <= d;
+    //     fire_send_rx_port_stats_to_connectal[3] <= 1;
+    // endrule
 
     rule send_rx_port_3_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[3] == 1);
@@ -236,11 +236,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
         fire_send_latency_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_latency_port_0_stats_from_sw;
-        let d <- sw.latency_res[0].get;
-        latency_stats[0] <= d;
-        fire_send_latency_stats_to_connectal[0] <= 1;
-    endrule
+    // rule get_latency_port_0_stats_from_sw;
+    //     let d <- sw.latency_res[0].get;
+    //     latency_stats[0] <= d;
+    //     fire_send_latency_stats_to_connectal[0] <= 1;
+    // endrule
 
     rule send_latency_port_0_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[0] == 1);
@@ -248,11 +248,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
         indication.display_latency_port_0_stats(latency_stats[0]);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_latency_port_1_stats_from_sw;
-        let d <- sw.latency_res[1].get;
-        latency_stats[1] <= d;
-        fire_send_latency_stats_to_connectal[1] <= 1;
-    endrule
+    // rule get_latency_port_1_stats_from_sw;
+    //     let d <- sw.latency_res[1].get;
+    //     latency_stats[1] <= d;
+    //     fire_send_latency_stats_to_connectal[1] <= 1;
+    // endrule
 
     rule send_latency_port_1_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[1] == 1);
@@ -260,11 +260,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
         indication.display_latency_port_1_stats(latency_stats[1]);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_latency_port_2_stats_from_sw;
-        let d <- sw.latency_res[2].get;
-        latency_stats[2] <= d;
-        fire_send_latency_stats_to_connectal[2] <= 1;
-    endrule
+    // rule get_latency_port_2_stats_from_sw;
+    //     let d <- sw.latency_res[2].get;
+    //     latency_stats[2] <= d;
+    //     fire_send_latency_stats_to_connectal[2] <= 1;
+    // endrule
 
     rule send_latency_port_2_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[2] == 1);
@@ -272,11 +272,11 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
         indication.display_latency_port_2_stats(latency_stats[2]);
     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_latency_port_3_stats_from_sw;
-        let d <- sw.latency_res[3].get;
-        latency_stats[3] <= d;
-        fire_send_latency_stats_to_connectal[3] <= 1;
-    endrule
+    // rule get_latency_port_3_stats_from_sw;
+    //     let d <- sw.latency_res[3].get;
+    //     latency_stats[3] <= d;
+    //     fire_send_latency_stats_to_connectal[3] <= 1;
+    // endrule
 
     rule send_latency_port_3_stats_to_connectal
             (fire_send_rx_port_stats_to_connectal[3] == 1);
@@ -300,17 +300,17 @@ module mkCircuitSwTopSim#(CircuitSwTopSimIndication indication)(CircuitSwTopSim)
         sw.start(truncate(d), t);
     endrule
 
-    rule send_stat_request_to_sw (send_stat_request == 1);
-        send_stat_request <= 0;
-        for (Integer i = 0; i < valueOf(NUM_OF_SWITCH_PORTS); i = i + 1)
-        begin
-            sw.tx_port_stats_req[i].put(1);
-            sw.rx_port_stats_req[i].put(1);
-`ifdef PHY_SW
-            sw.latency_req[i].put(1);
-`endif
-        end
-    endrule
+//     rule send_stat_request_to_sw (send_stat_request == 1);
+//         send_stat_request <= 0;
+//         for (Integer i = 0; i < valueOf(NUM_OF_SWITCH_PORTS); i = i + 1)
+//         begin
+//             sw.tx_port_stats_req[i].put(1);
+//             sw.rx_port_stats_req[i].put(1);
+// `ifdef PHY_SW
+//             sw.latency_req[i].put(1);
+// `endif
+//         end
+//     endrule
 
     interface CircuitSwTopSimRequest request;
 

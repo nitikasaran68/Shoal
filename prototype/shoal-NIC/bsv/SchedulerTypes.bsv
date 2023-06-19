@@ -1,4 +1,5 @@
 import Params::*;
+import ShaleUtil::*;
 import DefaultValue::*;
 
 `include "ConnectalProjectConfig.bsv"

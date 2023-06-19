@@ -1,6 +1,6 @@
 DEV_ROOT ?= $(HOME)
 CONNECTALDIR ?= $(DEV_ROOT)/connectal
-PROJECT_DIR = $(DEV_ROOT)/shoal-prototype/shoal-hw-simulator/1-fpga-multiple-nics/
+PROJECT_DIR = $(DEV_ROOT)/Shoal/prototype/shoal-hw-simulator/1-fpga-multiple-nics/
 S2H_INTERFACES = ShoalMultiSimTopRequest:ShoalMultiSimTop.request
 H2S_INTERFACES = ShoalMultiSimTop:ShoalMultiSimTopIndication
 BSVFILES = $(PROJECT_DIR)/bsv/ShoalMultiSimTop.bsv
@@ -13,7 +13,8 @@ CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../shoal-NIC/bsv/
 CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../lib/bsv/
 CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../lib/generated/
 
-CONNECTALFLAGS += -D CW_PHY_SIM
+# This flag enables PhySwitch instead of MacSwitch
+# CONNECTALFLAGS += -D CW_PHY_SIM
 
 CONNECTALFLAGS += -D NIC_SIM
 CONNECTALFLAGS += -D MULTI_NIC
@@ -23,6 +24,7 @@ CONNECTALFLAGS += --bscflags="-show-schedule -show-range-conflict +RTS -K4677721
 
 #ifeq ($(BOARD), vsim)
 CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/mac_10gbe
+CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/altera_xcvr_10gbaser_wrapper
 #endif
 
 prebuild::

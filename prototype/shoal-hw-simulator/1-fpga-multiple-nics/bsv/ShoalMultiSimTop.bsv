@@ -11,6 +11,7 @@ import Clocks::*;
 
 import Params::*;
 import SwParams::*;
+import ShaleUtil::*;
 `ifndef CW_PHY_SIM
 import MacSwitch::*;
 `else
@@ -48,49 +49,56 @@ interface ShoalMultiSimTopIndication;
     method Action display_latency_port_2_stats(Bit#(64) t);
     method Action display_latency_port_3_stats(Bit#(64) t);
 `endif
-	method Action display_time_slots_count_p0(Bit#(64) count);
+
+	method Action display_received_wrong_dst_pkt_count(Bit#(16) idx, Bit#(64) count);
+    method Action display_latency(Bit#(16) idx, Bit#(64) count);
+    method Action display_buffer_length(Bit#(16) idx, Bit#(64) count);
+	method Action display_time_slots_count(Bit#(16) idx, Bit#(64) count);
+	method Action display_received_host_pkt_count(Bit#(16) idx, Bit#(64) count);
+
+	// method Action display_time_slots_count_p0(Bit#(64) count);
 	method Action display_sent_host_pkt_count_p0(Bit#(64) count);
 	method Action display_sent_fwd_pkt_count_p0(Bit#(64) count);
-	method Action display_received_host_pkt_count_p0(Bit#(64) count);
+	// method Action display_received_host_pkt_count_p0(Bit#(64) count);
 	method Action display_received_fwd_pkt_count_p0(Bit#(64) count);
 	method Action display_received_corrupted_pkt_count_p0(Bit#(64) count);
-	method Action display_received_wrong_dst_pkt_count_p0(Bit#(64) count);
+	// method Action display_received_wrong_dst_pkt_count_p0(Bit#(64) count);
     method Action display_num_of_blocks_transmitted_from_mac_p0(Bit#(64) count);
     method Action display_num_of_blocks_received_by_mac_p0(Bit#(64) count);
-    method Action display_latency_p0(Bit#(64) count);
+    // method Action display_latency_p0(Bit#(64) count);
 
-	method Action display_time_slots_count_p1(Bit#(64) count);
+	// method Action display_time_slots_count_p1(Bit#(64) count);
 	method Action display_sent_host_pkt_count_p1(Bit#(64) count);
 	method Action display_sent_fwd_pkt_count_p1(Bit#(64) count);
-	method Action display_received_host_pkt_count_p1(Bit#(64) count);
+	// method Action display_received_host_pkt_count_p1(Bit#(64) count);
 	method Action display_received_fwd_pkt_count_p1(Bit#(64) count);
 	method Action display_received_corrupted_pkt_count_p1(Bit#(64) count);
-	method Action display_received_wrong_dst_pkt_count_p1(Bit#(64) count);
+	// method Action display_received_wrong_dst_pkt_count_p1(Bit#(64) count);
     method Action display_num_of_blocks_transmitted_from_mac_p1(Bit#(64) count);
     method Action display_num_of_blocks_received_by_mac_p1(Bit#(64) count);
-    method Action display_latency_p1(Bit#(64) count);
+    // method Action display_latency_p1(Bit#(64) count);
 
-	method Action display_time_slots_count_p2(Bit#(64) count);
+	// method Action display_time_slots_count_p2(Bit#(64) count);
 	method Action display_sent_host_pkt_count_p2(Bit#(64) count);
 	method Action display_sent_fwd_pkt_count_p2(Bit#(64) count);
-	method Action display_received_host_pkt_count_p2(Bit#(64) count);
+	// method Action display_received_host_pkt_count_p2(Bit#(64) count);
 	method Action display_received_fwd_pkt_count_p2(Bit#(64) count);
 	method Action display_received_corrupted_pkt_count_p2(Bit#(64) count);
-	method Action display_received_wrong_dst_pkt_count_p2(Bit#(64) count);
+	// method Action display_received_wrong_dst_pkt_count_p2(Bit#(64) count);
     method Action display_num_of_blocks_transmitted_from_mac_p2(Bit#(64) count);
     method Action display_num_of_blocks_received_by_mac_p2(Bit#(64) count);
-    method Action display_latency_p2(Bit#(64) count);
+    // method Action display_latency_p2(Bit#(64) count);
 
-	method Action display_time_slots_count_p3(Bit#(64) count);
+	// method Action display_time_slots_count_p3(Bit#(64) count);
 	method Action display_sent_host_pkt_count_p3(Bit#(64) count);
 	method Action display_sent_fwd_pkt_count_p3(Bit#(64) count);
-	method Action display_received_host_pkt_count_p3(Bit#(64) count);
+	// method Action display_received_host_pkt_count_p3(Bit#(64) count);
 	method Action display_received_fwd_pkt_count_p3(Bit#(64) count);
 	method Action display_received_corrupted_pkt_count_p3(Bit#(64) count);
-	method Action display_received_wrong_dst_pkt_count_p3(Bit#(64) count);
+	// method Action display_received_wrong_dst_pkt_count_p3(Bit#(64) count);
     method Action display_num_of_blocks_transmitted_from_mac_p3(Bit#(64) count);
     method Action display_num_of_blocks_received_by_mac_p3(Bit#(64) count);
-    method Action display_latency_p3(Bit#(64) count);
+    // method Action display_latency_p3(Bit#(64) count);
 endinterface
 
 interface ShoalMultiSimTopRequest;
@@ -152,88 +160,98 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 
 	Reg#(Bit#(1)) get_time_slots_flag
 	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1)) get_sent_host_pkt_flag
-	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1)) get_sent_fwd_pkt_flag
-	    <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// Reg#(Bit#(1)) get_sent_host_pkt_flag
+	//     <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// Reg#(Bit#(1)) get_sent_fwd_pkt_flag
+	//     <- mkReg(0, clocked_by txClock, reset_by txReset);
 	Reg#(Bit#(1)) get_received_host_pkt_flag
 	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1)) get_received_fwd_pkt_flag
-	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1)) get_received_corrupted_pkt_flag
-	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1)) get_received_wrong_dst_pkt_flag
-	    <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// Reg#(Bit#(1)) get_received_fwd_pkt_flag
+	//     <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// Reg#(Bit#(1)) get_received_corrupted_pkt_flag
+	//     <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// Reg#(Bit#(1)) get_received_wrong_dst_pkt_flag
+	//     <- mkReg(0, clocked_by txClock, reset_by txReset);
 	Reg#(Bit#(1)) get_latency_flag
 	    <- mkReg(0, clocked_by txClock, reset_by txReset);
-	Reg#(Bit#(1))
-        get_num_of_blocks_trans_from_mac_flag
-	        <- mkReg(0, clocked_by txClock, reset_by txReset);
-	SyncFIFOIfc#(Bit#(1))
-        get_num_of_blocks_recvd_by_mac_flag
-	        <- mkSyncFIFO(1, txClock, txReset, rxClock);
+    Reg#(Bit#(1)) get_buffer_lengths_flag
+	    <- mkReg(0, clocked_by txClock, reset_by txReset);
 
+	// Reg#(Bit#(1))
+    //     get_num_of_blocks_trans_from_mac_flag
+	//         <- mkReg(0, clocked_by txClock, reset_by txReset);
+	// SyncFIFOIfc#(Bit#(1))
+    //     get_num_of_blocks_recvd_by_mac_flag
+	//         <- mkSyncFIFO(1, txClock, txReset, rxClock);
+
+    // TODO: Why can't we send all stat requests together in one rule?
     rule get_time_slot_stats (get_time_slots_flag == 1);
         scheduler.timeSlotsCount();
         get_time_slots_flag <= 0;
-        get_sent_host_pkt_flag <= 1;
-    endrule
-
-    rule get_sent_host_pkt_stats (get_sent_host_pkt_flag == 1);
-        scheduler.sentHostPktCount();
-        get_sent_host_pkt_flag <= 0;
-        get_sent_fwd_pkt_flag <= 1;
-    endrule
-
-    rule get_sent_fwd_pkt_stats (get_sent_fwd_pkt_flag == 1);
-        scheduler.sentFwdPktCount();
-        get_sent_fwd_pkt_flag <= 0;
         get_received_host_pkt_flag <= 1;
     endrule
+
+    // rule get_sent_host_pkt_stats (get_sent_host_pkt_flag == 1);
+    //     scheduler.sentHostPktCount();
+    //     get_sent_host_pkt_flag <= 0;
+    //     get_sent_fwd_pkt_flag <= 1;
+    // endrule
+
+    // rule get_sent_fwd_pkt_stats (get_sent_fwd_pkt_flag == 1);
+    //     scheduler.sentFwdPktCount();
+    //     get_sent_fwd_pkt_flag <= 0;
+    //     get_received_host_pkt_flag <= 1;
+    // endrule
 
     rule get_received_host_pkt_stats (get_received_host_pkt_flag == 1);
         scheduler.receivedHostPktCount();
         get_received_host_pkt_flag <= 0;
-        get_received_fwd_pkt_flag <= 1;
-    endrule
-
-    rule get_received_fwd_pkt_stats (get_received_fwd_pkt_flag == 1);
-        scheduler.receivedFwdPktCount();
-        get_received_fwd_pkt_flag <= 0;
-        get_received_corrupted_pkt_flag <= 1;
-    endrule
-
-    rule get_received_corrupted_pkt_stats
-            (get_received_corrupted_pkt_flag == 1);
-        scheduler.receivedCorruptedPktCount();
-        get_received_corrupted_pkt_flag <= 0;
-        get_received_wrong_dst_pkt_flag <= 1;
-    endrule
-
-    rule get_received_wrong_dst_pkt_stats
-            (get_received_wrong_dst_pkt_flag == 1);
-        scheduler.receivedWrongDstPktCount();
-        get_received_wrong_dst_pkt_flag <= 0;
         get_latency_flag <= 1;
     endrule
+
+    // rule get_received_fwd_pkt_stats (get_received_fwd_pkt_flag == 1);
+    //     scheduler.receivedFwdPktCount();
+    //     get_received_fwd_pkt_flag <= 0;
+    //     get_received_corrupted_pkt_flag <= 1;
+    // endrule
+
+    // rule get_received_corrupted_pkt_stats
+    //         (get_received_corrupted_pkt_flag == 1);
+    //     scheduler.receivedCorruptedPktCount();
+    //     get_received_corrupted_pkt_flag <= 0;
+    //     get_received_wrong_dst_pkt_flag <= 1;
+    // endrule
+
+    // rule get_received_wrong_dst_pkt_stats
+    //         (get_received_wrong_dst_pkt_flag == 1);
+    //     scheduler.receivedWrongDstPktCount();
+    //     get_received_wrong_dst_pkt_flag <= 0;
+    //     get_latency_flag <= 1;
+    // endrule
 
     rule get_latency_stats (get_latency_flag == 1);
         scheduler.latency();
         get_latency_flag <= 0;
-        get_num_of_blocks_trans_from_mac_flag <= 1;
+        get_buffer_lengths_flag <= 1;
     endrule
 
-    rule get_num_of_blocks_trans_from_mac_stats
-            (get_num_of_blocks_trans_from_mac_flag == 1);
-        mac.getBlocksTransmittedFromMac();
-        get_num_of_blocks_trans_from_mac_flag <= 0;
-        get_num_of_blocks_recvd_by_mac_flag.enq(1);
+    rule get_buffer_length_stats (get_buffer_lengths_flag == 1);
+        scheduler.max_fwd_buffer_length();
+        get_buffer_lengths_flag <= 0;
+        // get_num_of_blocks_trans_from_mac_flag <= 1;
     endrule
 
-    rule get_num_of_blocks_recvd_by_mac_stats;
-        let d <- toGet(get_num_of_blocks_recvd_by_mac_flag).get;
-        mac.getBlocksReceivedByMac();
-    endrule
+    // rule get_num_of_blocks_trans_from_mac_stats
+    //         (get_num_of_blocks_trans_from_mac_flag == 1);
+    //     mac.getBlocksTransmittedFromMac();
+    //     get_num_of_blocks_trans_from_mac_flag <= 0;
+    //     get_num_of_blocks_recvd_by_mac_flag.enq(1);
+    // endrule
+
+    // rule get_num_of_blocks_recvd_by_mac_stats;
+    //     let d <- toGet(get_num_of_blocks_recvd_by_mac_flag).get;
+    //     mac.getBlocksReceivedByMac();
+    // endrule
 
 /*-------------------------------------------------------------------------------*/
 
@@ -329,7 +347,8 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
         rule start_shoal (host_index_ready == 1
                         && rate_ready == 1
                         && timeslot_ready == 1);
-            if (rate != 0 && i == 0)
+            // TODO: WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
+            if (rate != 0)
                 cg[i].start(fromInteger(i), rate);
 
             if (i == 0)
@@ -360,376 +379,443 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 `endif
     endrule
 
-/*------------------------------------------------------------------------------*/
+    
+/* ------------------------------------------------------------------------------
+*                   Simulating connection wires via SyncFIFOs */
+/* ------------------------------------------------------------------------------*/
 
-    /* Simulating connection wires via SyncFIFOs */
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s0 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s1 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s2 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s3 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s0_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s1_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s2_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s3_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    Vector#(NUM_OF_SWITCH_PORTS, SyncFIFOIfc#(Bit#(72))) wire_fifo_sw_to_node
+         <- replicateM(mkSyncFIFO(16, txClock, tx_rst, rxClock));
+    Vector#(NUM_OF_SWITCH_PORTS, SyncFIFOIfc#(Bit#(72))) wire_fifo_node_to_sw
+         <- replicateM(mkSyncFIFO(16, txClock, tx_rst, rxClock));
 
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s0 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s1 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s2 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s3 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_s0_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_s1_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_s2_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    SyncFIFOIfc#(Bit#(72)) wire_fifo_s3_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // For each NIC, simulate a delay of 100 from NIC to switch
+    // TODO: But weirdly not the other way around?
+    Integer delay = 1;
+    // Vector#(1, FIFO#(Bit#(72))) fifo_s0_sw
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    // Vector#(1, FIFO#(Bit#(72))) fifo_s1_sw
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    // Vector#(1, FIFO#(Bit#(72))) fifo_s2_sw
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    // Vector#(1, FIFO#(Bit#(72))) fifo_s3_sw
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    Vector#(NUM_OF_SWITCH_PORTS, Vector#(1, FIFO#(Bit#(72)))) fifo_node_to_sw
+        <- replicateM(replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst)));
 
-    Integer delay = 100;
-    Vector#(100, FIFO#(Bit#(72))) fifo_s0_sw
-        <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
-    Vector#(100, FIFO#(Bit#(72))) fifo_s1_sw
-        <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
-    Vector#(100, FIFO#(Bit#(72))) fifo_s2_sw
-        <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
-    Vector#(100, FIFO#(Bit#(72))) fifo_s3_sw
-        <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    // rule tx_rule_s0_sw;
+    //     let v = mac.tx(0);
+    //     fifo_s0_sw[0].enq(v);
+    //     //wire_fifo_s0_sw.enq(v);
+    //     //if (v != 'h83c1e0f0783c1e0f07)
+    //     // if (v == 'h6a954aa552a954abfb)
+    //     // $display("Out of MAC Port 0, t = %d", mac.getTxClock);
+    // endrule
 
-    rule tx_rule_s0_sw;
-        let v = mac.tx(0);
-        fifo_s0_sw[0].enq(v);
-        //wire_fifo_s0_sw.enq(v);
-        //if (v != 'h83c1e0f0783c1e0f07)
-        //if (v == 'h6a954aa552a954abfb)
-        //    $display("Out of MAC Port 0, t = %d v = %x", mac.getTxClock, v);
-    endrule
+    // rule tx_rule_s1_sw;
+    //     let v = mac.tx(1);
+    //     fifo_s1_sw[0].enq(v);
+    //     //wire_fifo_s1_sw.enq(v);
+    // endrule
 
-    rule tx_rule_s1_sw;
-        let v = mac.tx(1);
-        fifo_s1_sw[0].enq(v);
-        //wire_fifo_s1_sw.enq(v);
-    endrule
+    // rule tx_rule_s2_sw;
+    //     let v = mac.tx(2);
+    //     fifo_s2_sw[0].enq(v);
+    //     //wire_fifo_s2_sw.enq(v);
+    // endrule
 
-    rule tx_rule_s2_sw;
-        let v = mac.tx(2);
-        fifo_s2_sw[0].enq(v);
-        //wire_fifo_s2_sw.enq(v);
-    endrule
+    // rule tx_rule_s3_sw;
+    //     let v = mac.tx(3);
+    //     fifo_s3_sw[0].enq(v);
+    //     //wire_fifo_s3_sw.enq(v);
+    // endrule
 
-    rule tx_rule_s3_sw;
-        let v = mac.tx(3);
-        fifo_s3_sw[0].enq(v);
-        //wire_fifo_s3_sw.enq(v);
-    endrule
-
-    for (Integer i = 0; i < delay; i = i + 1)
+    for (Integer i = 0; i < valueof(NUM_OF_SWITCH_PORTS); i = i + 1)
     begin
-        rule get_and_put_s0_sw;
-            let v <- toGet(fifo_s0_sw[i]).get;
-            if (i < delay-1)
-                fifo_s0_sw[i+1].enq(v);
-            else
-                wire_fifo_s0_sw.enq(v);
-        endrule
-        rule get_and_put_s1_sw;
-            let v <- toGet(fifo_s1_sw[i]).get;
-            if (i < delay-1)
-                fifo_s1_sw[i+1].enq(v);
-            else
-                wire_fifo_s1_sw.enq(v);
-        endrule
-        rule get_and_put_s2_sw;
-            let v <- toGet(fifo_s2_sw[i]).get;
-            if (i < delay-1)
-                fifo_s2_sw[i+1].enq(v);
-            else
-                wire_fifo_s2_sw.enq(v);
-        endrule
-        rule get_and_put_s3_sw;
-            let v <- toGet(fifo_s3_sw[i]).get;
-            if (i < delay-1)
-                fifo_s3_sw[i+1].enq(v);
-            else
-                wire_fifo_s3_sw.enq(v);
+        rule tx_rule_node_to_sw;
+            let v = mac.tx(i);
+            fifo_node_to_sw[i][0].enq(v);
+            //wire_fifo_s1_sw.enq(v);
         endrule
     end
 
-    rule tx_rule_sw_s0;
-`ifndef CW_PHY_SIM
-        let v = sw.tx(0);
-`else
-        let v <- sw.phyTx[0].get;
-`endif
-        wire_fifo_sw_s0.enq(v);
-    endrule
+    // for (Integer i = 0; i < delay; i = i + 1)
+    // begin
+    //     rule get_and_put_s0_sw;
+    //         let v <- toGet(fifo_s0_sw[i]).get;
+    //         if (i < delay-1)
+    //             fifo_s0_sw[i+1].enq(v);
+    //         else
+    //             wire_fifo_s0_sw.enq(v);
+    //     endrule
+    //     rule get_and_put_s1_sw;
+    //         let v <- toGet(fifo_s1_sw[i]).get;
+    //         if (i < delay-1)
+    //             fifo_s1_sw[i+1].enq(v);
+    //         else
+    //             wire_fifo_s1_sw.enq(v);
+    //     endrule
+    //     rule get_and_put_s2_sw;
+    //         let v <- toGet(fifo_s2_sw[i]).get;
+    //         if (i < delay-1)
+    //             fifo_s2_sw[i+1].enq(v);
+    //         else
+    //             wire_fifo_s2_sw.enq(v);
+    //     endrule
+    //     rule get_and_put_s3_sw;
+    //         let v <- toGet(fifo_s3_sw[i]).get;
+    //         if (i < delay-1)
+    //             fifo_s3_sw[i+1].enq(v);
+    //         else
+    //             wire_fifo_s3_sw.enq(v);
+    //     endrule
+    // end
 
-    rule tx_rule_sw_s1;
-`ifndef CW_PHY_SIM
-        let v = sw.tx(1);
-`else
-        let v <- sw.phyTx[1].get;
-`endif
-        wire_fifo_sw_s1.enq(v);
-        //if (v != 'h83c1e0f0783c1e0f07)
-        //if (v == 'h6a954aa552a954abfb)
-        //    $display("Out of SW Port 1, t = %d v = %x", mac.getTxClock, v);
-    endrule
+    for (Integer i = 0; i < valueof(NUM_OF_SWITCH_PORTS); i = i + 1)
+    begin
+        for (Integer j = 0; j < delay; j = j + 1)
+        begin
+            rule get_and_put_node_sw;
+                let v <- toGet(fifo_node_to_sw[i][j]).get;
+                if (j < delay-1)
+                    fifo_node_to_sw[i][j+1].enq(v);
+                else
+                    wire_fifo_node_to_sw[i].enq(v);
+            endrule
+        end
+    end
 
-    rule tx_rule_sw_s2;
-`ifndef CW_PHY_SIM
-        let v = sw.tx(2);
-`else
-        let v <- sw.phyTx[2].get;
-`endif
-        wire_fifo_sw_s2.enq(v);
-    endrule
+//     rule tx_rule_sw_s0;
+// `ifndef CW_PHY_SIM
+//         let v = sw.tx(0);
+// `else
+//         let v <- sw.phyTx[0].get;
+// `endif
+//         wire_fifo_sw_s0.enq(v);
+//     endrule
 
-    rule tx_rule_sw_s3;
-`ifndef CW_PHY_SIM
-        let v = sw.tx(3);
-`else
-        let v <- sw.phyTx[3].get;
-`endif
-        wire_fifo_sw_s3.enq(v);
-    endrule
+//     rule tx_rule_sw_s1;
+// `ifndef CW_PHY_SIM
+//         let v = sw.tx(1);
+// `else
+//         let v <- sw.phyTx[1].get;
+// `endif
+//         wire_fifo_sw_s1.enq(v);
+//         //if (v != 'h83c1e0f0783c1e0f07)
+//         //if (v == 'h6a954aa552a954abfb)
+//         //    $display("Out of SW Port 1, t = %d v = %x", mac.getTxClock, v);
+//     endrule
 
-    rule rx_rule_s0_sw;
-        let v <- toGet(wire_fifo_s0_sw).get;
-`ifndef CW_PHY_SIM
-        sw.rx(0, v);
-`else
-        sw.phyRx[0].put(v);
-`endif
-        //if (v != 'h83c1e0f0783c1e0f07)
-        //if (v == 'h6a954aa552a954abfb)
-        //    $display("Into SW Port 0, t = %d v = %x", mac.getRxClock, v);
-    endrule
+//     rule tx_rule_sw_s2;
+// `ifndef CW_PHY_SIM
+//         let v = sw.tx(2);
+// `else
+//         let v <- sw.phyTx[2].get;
+// `endif
+//         wire_fifo_sw_s2.enq(v);
+//     endrule
 
-    rule rx_rule_s1_sw;
-        let v <- toGet(wire_fifo_s1_sw).get;
-`ifndef CW_PHY_SIM
-        sw.rx(1, v);
-`else
-        sw.phyRx[1].put(v);
-`endif
-    endrule
+//     rule tx_rule_sw_s3;
+// `ifndef CW_PHY_SIM
+//         let v = sw.tx(3);
+// `else
+//         let v <- sw.phyTx[3].get;
+// `endif
+//         wire_fifo_sw_s3.enq(v);
+//     endrule
 
-    rule rx_rule_s2_sw;
-        let v <- toGet(wire_fifo_s2_sw).get;
-`ifndef CW_PHY_SIM
-        sw.rx(2, v);
-`else
-        sw.phyRx[2].put(v);
-`endif
-    endrule
+    for (Integer i = 0; i < valueof(NUM_OF_SWITCH_PORTS); i = i + 1)
+    begin
+        rule tx_rule_sw_node;
+    `ifndef CW_PHY_SIM
+            let v = sw.tx(i);
+    `else
+            let v <- sw.phyTx[i].get;
+    `endif
+            wire_fifo_sw_to_node[i].enq(v);
+        endrule
+    end
 
-    rule rx_rule_s3_sw;
-        let v <- toGet(wire_fifo_s3_sw).get;
-`ifndef CW_PHY_SIM
-        sw.rx(3, v);
-`else
-        sw.phyRx[3].put(v);
-`endif
-    endrule
+//     rule rx_rule_s0_sw;
+//         let v <- toGet(wire_fifo_s0_sw).get;
+// `ifndef CW_PHY_SIM
+//         sw.rx(0, v);
+// `else
+//         sw.phyRx[0].put(v);
+// `endif
+//         //if (v != 'h83c1e0f0783c1e0f07)
+//         //if (v == 'h6a954aa552a954abfb)
+//         //    $display("Into SW Port 0, t = %d v = %x", mac.getRxClock, v);
+//     endrule
 
-    rule rx_rule_sw_s0;
-        let v <- toGet(wire_fifo_sw_s0).get;
-        mac.rx(0, v);
-    endrule
+//     rule rx_rule_s1_sw;
+//         let v <- toGet(wire_fifo_s1_sw).get;
+// `ifndef CW_PHY_SIM
+//         sw.rx(1, v);
+// `else
+//         sw.phyRx[1].put(v);
+// `endif
+//     endrule
 
-    rule rx_rule_sw_s1;
-        let v <- toGet(wire_fifo_sw_s1).get;
-        mac.rx(1, v);
-        //if (v != 'h83c1e0f0783c1e0f07)
-        //if (v == 'h6a954aa552a954abfb)
-        //    $display("Into MAC Port 1, t = %d v = %x", mac.getRxClock, v);
-    endrule
+//     rule rx_rule_s2_sw;
+//         let v <- toGet(wire_fifo_s2_sw).get;
+// `ifndef CW_PHY_SIM
+//         sw.rx(2, v);
+// `else
+//         sw.phyRx[2].put(v);
+// `endif
+//     endrule
 
-    rule rx_rule_sw_s2;
-        let v <- toGet(wire_fifo_sw_s2).get;
-        mac.rx(2, v);
-    endrule
+//     rule rx_rule_s3_sw;
+//         let v <- toGet(wire_fifo_s3_sw).get;
+// `ifndef CW_PHY_SIM
+//         sw.rx(3, v);
+// `else
+//         sw.phyRx[3].put(v);
+// `endif
+//     endrule
 
-    rule rx_rule_sw_s3;
-        let v <- toGet(wire_fifo_sw_s3).get;
-        mac.rx(3, v);
-    endrule
+    for (Integer i = 0; i < valueof(NUM_OF_SWITCH_PORTS); i = i + 1)
+    begin
+        rule rx_rule_node_sw;
+            let v <- toGet(wire_fifo_node_to_sw[i]).get;
+    `ifndef CW_PHY_SIM
+            sw.rx(i, v);
+    `else
+            sw.phyRx[i].put(v);
+    `endif
+            //if (v != 'h83c1e0f0783c1e0f07)
+            //if (v == 'h6a954aa552a954abfb)
+            //    $display("Into SW Port 0, t = %d v = %x", mac.getRxClock, v);
+        endrule
+    end
+
+    // rule rx_rule_sw_s0;
+    //     let v <- toGet(wire_fifo_sw_s0).get;
+    //     mac.rx(0, v);
+    // endrule
+
+    // rule rx_rule_sw_s1;
+    //     let v <- toGet(wire_fifo_sw_s1).get;
+    //     mac.rx(1, v);
+    //     //if (v != 'h83c1e0f0783c1e0f07)
+    //     //if (v == 'h6a954aa552a954abfb)
+    //     //    $display("Into MAC Port 1, t = %d v = %x", mac.getRxClock, v);
+    // endrule
+
+    // rule rx_rule_sw_s2;
+    //     let v <- toGet(wire_fifo_sw_s2).get;
+    //     mac.rx(2, v);
+    // endrule
+
+    // rule rx_rule_sw_s3;
+    //     let v <- toGet(wire_fifo_sw_s3).get;
+    //     mac.rx(3, v);
+    // endrule
+
+    for (Integer i = 0; i < valueof(NUM_OF_SWITCH_PORTS); i = i + 1)
+    begin
+        rule rx_rule_sw_node;
+            let v <- toGet(wire_fifo_sw_to_node[i]).get;
+            mac.rx(i, v);
+        endrule
+    end
 
 /* ------------------------------------------------------------------------------
 *                               INDICATION RULES
 * ------------------------------------------------------------------------------*/
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(PortStatsT))
-        tx_port_stats <- replicateM(mkReg(defaultValue));
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
-        fire_send_tx_port_stats_to_connectal <- replicateM(mkReg(0));
+    // Vector#(NUM_OF_SWITCH_PORTS, Reg#(PortStatsT))
+    //     tx_port_stats <- replicateM(mkReg(defaultValue));
+    // Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
+    //     fire_send_tx_port_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_tx_port_0_stats_from_sw;
-        let d <- sw.tx_port_stats_res[0].get;
-        tx_port_stats[0] <= d;
-        fire_send_tx_port_stats_to_connectal[0] <= 1;
-    endrule
+    // rule get_tx_port_0_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[0].get;
+    //     tx_port_stats[0] <= d;
+    //     fire_send_tx_port_stats_to_connectal[0] <= 1;
+    // endrule
 
-    rule send_tx_port_0_stats_to_connectal
-            (fire_send_tx_port_stats_to_connectal[0] == 1);
-        fire_send_tx_port_stats_to_connectal[0] <= 0;
-        indication.display_tx_port_0_stats(tx_port_stats[0].sop,
-                                        tx_port_stats[0].eop,
-                                        tx_port_stats[0].blocks,
-                                        tx_port_stats[0].cells);
-    endrule
+    // rule send_tx_port_0_stats_to_connectal
+    //         (fire_send_tx_port_stats_to_connectal[0] == 1);
+    //     fire_send_tx_port_stats_to_connectal[0] <= 0;
+    //     indication.display_tx_port_0_stats(tx_port_stats[0].sop,
+    //                                     tx_port_stats[0].eop,
+    //                                     tx_port_stats[0].blocks,
+    //                                     tx_port_stats[0].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_1_stats_from_sw;
-        let d <- sw.tx_port_stats_res[1].get;
-        tx_port_stats[1] <= d;
-        fire_send_tx_port_stats_to_connectal[1] <= 1;
-    endrule
+    // rule get_tx_port_1_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[1].get;
+    //     tx_port_stats[1] <= d;
+    //     fire_send_tx_port_stats_to_connectal[1] <= 1;
+    // endrule
 
-    rule send_tx_port_1_stats_to_connectal
-            (fire_send_tx_port_stats_to_connectal[1] == 1);
-        fire_send_tx_port_stats_to_connectal[1] <= 0;
-        indication.display_tx_port_1_stats(tx_port_stats[1].sop,
-                                        tx_port_stats[1].eop,
-                                        tx_port_stats[1].blocks,
-                                        tx_port_stats[1].cells);
-    endrule
+    // rule send_tx_port_1_stats_to_connectal
+    //         (fire_send_tx_port_stats_to_connectal[1] == 1);
+    //     fire_send_tx_port_stats_to_connectal[1] <= 0;
+    //     indication.display_tx_port_1_stats(tx_port_stats[1].sop,
+    //                                     tx_port_stats[1].eop,
+    //                                     tx_port_stats[1].blocks,
+    //                                     tx_port_stats[1].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_2_stats_from_sw;
-        let d <- sw.tx_port_stats_res[2].get;
-        tx_port_stats[2] <= d;
-        fire_send_tx_port_stats_to_connectal[2] <= 1;
-    endrule
+    // rule get_tx_port_2_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[2].get;
+    //     tx_port_stats[2] <= d;
+    //     fire_send_tx_port_stats_to_connectal[2] <= 1;
+    // endrule
 
-    rule send_tx_port_2_stats_to_connectal
-            (fire_send_tx_port_stats_to_connectal[2] == 1);
-        fire_send_tx_port_stats_to_connectal[2] <= 0;
-        indication.display_tx_port_2_stats(tx_port_stats[2].sop,
-                                        tx_port_stats[2].eop,
-                                        tx_port_stats[2].blocks,
-                                        tx_port_stats[2].cells);
-    endrule
+    // rule send_tx_port_2_stats_to_connectal
+    //         (fire_send_tx_port_stats_to_connectal[2] == 1);
+    //     fire_send_tx_port_stats_to_connectal[2] <= 0;
+    //     indication.display_tx_port_2_stats(tx_port_stats[2].sop,
+    //                                     tx_port_stats[2].eop,
+    //                                     tx_port_stats[2].blocks,
+    //                                     tx_port_stats[2].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_tx_port_3_stats_from_sw;
-        let d <- sw.tx_port_stats_res[3].get;
-        tx_port_stats[3] <= d;
-        fire_send_tx_port_stats_to_connectal[3] <= 1;
-    endrule
+    // rule get_tx_port_3_stats_from_sw;
+    //     let d <- sw.tx_port_stats_res[3].get;
+    //     tx_port_stats[3] <= d;
+    //     fire_send_tx_port_stats_to_connectal[3] <= 1;
+    // endrule
 
-    rule send_tx_port_3_stats_to_connectal
-            (fire_send_tx_port_stats_to_connectal[3] == 1);
-        fire_send_tx_port_stats_to_connectal[3] <= 0;
-        indication.display_tx_port_3_stats(tx_port_stats[3].sop,
-                                        tx_port_stats[3].eop,
-                                        tx_port_stats[3].blocks,
-                                        tx_port_stats[3].cells);
-    endrule
+    // rule send_tx_port_3_stats_to_connectal
+    //         (fire_send_tx_port_stats_to_connectal[3] == 1);
+    //     fire_send_tx_port_stats_to_connectal[3] <= 0;
+    //     indication.display_tx_port_3_stats(tx_port_stats[3].sop,
+    //                                     tx_port_stats[3].eop,
+    //                                     tx_port_stats[3].blocks,
+    //                                     tx_port_stats[3].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(PortStatsT))
-        rx_port_stats <- replicateM(mkReg(defaultValue));
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
-        fire_send_rx_port_stats_to_connectal <- replicateM(mkReg(0));
+    // Vector#(NUM_OF_SWITCH_PORTS, Reg#(PortStatsT))
+    //     rx_port_stats <- replicateM(mkReg(defaultValue));
+    // Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
+    //     fire_send_rx_port_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_rx_port_0_stats_from_sw;
-        let d <- sw.rx_port_stats_res[0].get;
-        rx_port_stats[0] <= d;
-        fire_send_rx_port_stats_to_connectal[0] <= 1;
-    endrule
+    // rule get_rx_port_0_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[0].get;
+    //     rx_port_stats[0] <= d;
+    //     fire_send_rx_port_stats_to_connectal[0] <= 1;
+    // endrule
 
-    rule send_rx_port_0_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[0] == 1);
-        fire_send_rx_port_stats_to_connectal[0] <= 0;
-        indication.display_rx_port_0_stats(rx_port_stats[0].sop,
-                                        rx_port_stats[0].eop,
-                                        rx_port_stats[0].blocks,
-                                        rx_port_stats[0].cells);
-    endrule
+    // rule send_rx_port_0_stats_to_connectal
+    //         (fire_send_rx_port_stats_to_connectal[0] == 1);
+    //     fire_send_rx_port_stats_to_connectal[0] <= 0;
+    //     indication.display_rx_port_0_stats(rx_port_stats[0].sop,
+    //                                     rx_port_stats[0].eop,
+    //                                     rx_port_stats[0].blocks,
+    //                                     rx_port_stats[0].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_1_stats_from_sw;
-        let d <- sw.rx_port_stats_res[1].get;
-        rx_port_stats[1] <= d;
-        fire_send_rx_port_stats_to_connectal[1] <= 1;
-    endrule
+    // rule get_rx_port_1_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[1].get;
+    //     rx_port_stats[1] <= d;
+    //     fire_send_rx_port_stats_to_connectal[1] <= 1;
+    // endrule
 
-    rule send_rx_port_1_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[1] == 1);
-        fire_send_rx_port_stats_to_connectal[1] <= 0;
-        indication.display_rx_port_1_stats(rx_port_stats[1].sop,
-                                        rx_port_stats[1].eop,
-                                        rx_port_stats[1].blocks,
-                                        rx_port_stats[1].cells);
-    endrule
+    // rule send_rx_port_1_stats_to_connectal
+    //         (fire_send_rx_port_stats_to_connectal[1] == 1);
+    //     fire_send_rx_port_stats_to_connectal[1] <= 0;
+    //     indication.display_rx_port_1_stats(rx_port_stats[1].sop,
+    //                                     rx_port_stats[1].eop,
+    //                                     rx_port_stats[1].blocks,
+    //                                     rx_port_stats[1].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_2_stats_from_sw;
-        let d <- sw.rx_port_stats_res[2].get;
-        rx_port_stats[2] <= d;
-        fire_send_rx_port_stats_to_connectal[2] <= 1;
-    endrule
+    // rule get_rx_port_2_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[2].get;
+    //     rx_port_stats[2] <= d;
+    //     fire_send_rx_port_stats_to_connectal[2] <= 1;
+    // endrule
 
-    rule send_rx_port_2_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[2] == 1);
-        fire_send_rx_port_stats_to_connectal[2] <= 0;
-        indication.display_rx_port_2_stats(rx_port_stats[2].sop,
-                                        rx_port_stats[2].eop,
-                                        rx_port_stats[2].blocks,
-                                        rx_port_stats[2].cells);
-    endrule
+    // rule send_rx_port_2_stats_to_connectal
+    //         (fire_send_rx_port_stats_to_connectal[2] == 1);
+    //     fire_send_rx_port_stats_to_connectal[2] <= 0;
+    //     indication.display_rx_port_2_stats(rx_port_stats[2].sop,
+    //                                     rx_port_stats[2].eop,
+    //                                     rx_port_stats[2].blocks,
+    //                                     rx_port_stats[2].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-    rule get_rx_port_3_stats_from_sw;
-        let d <- sw.rx_port_stats_res[3].get;
-        rx_port_stats[3] <= d;
-        fire_send_rx_port_stats_to_connectal[3] <= 1;
-    endrule
+    // rule get_rx_port_3_stats_from_sw;
+    //     let d <- sw.rx_port_stats_res[3].get;
+    //     rx_port_stats[3] <= d;
+    //     fire_send_rx_port_stats_to_connectal[3] <= 1;
+    // endrule
 
-    rule send_rx_port_3_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[3] == 1);
-        fire_send_rx_port_stats_to_connectal[3] <= 0;
-        indication.display_rx_port_3_stats(rx_port_stats[3].sop,
-                                        rx_port_stats[3].eop,
-                                        rx_port_stats[3].blocks,
-                                        rx_port_stats[3].cells);
-    endrule
+    // rule send_rx_port_3_stats_to_connectal
+    //         (fire_send_rx_port_stats_to_connectal[3] == 1);
+    //     fire_send_rx_port_stats_to_connectal[3] <= 0;
+    //     indication.display_rx_port_3_stats(rx_port_stats[3].sop,
+    //                                     rx_port_stats[3].eop,
+    //                                     rx_port_stats[3].blocks,
+    //                                     rx_port_stats[3].cells);
+    // endrule
 /*------------------------------------------------------------------------------*/
-`ifdef CW_PHY_SIM
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(64)))
-        latency_stats <- replicateM(mkReg(0));
-    Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
-        fire_send_latency_stats_to_connectal <- replicateM(mkReg(0));
+// `ifdef CW_PHY_SIM
+//     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(64)))
+//         latency_stats <- replicateM(mkReg(0));
+//     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Bit#(1)))
+//         fire_send_latency_stats_to_connectal <- replicateM(mkReg(0));
 
-    rule get_latency_port_0_stats_from_sw;
-        let d <- sw.latency_res[0].get;
-        latency_stats[0] <= d;
-        fire_send_latency_stats_to_connectal[0] <= 1;
-    endrule
+//     rule get_latency_port_0_stats_from_sw;
+//         let d <- sw.latency_res[0].get;
+//         latency_stats[0] <= d;
+//         fire_send_latency_stats_to_connectal[0] <= 1;
+//     endrule
 
-    rule send_latency_port_0_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[0] == 1);
-        fire_send_latency_stats_to_connectal[0] <= 0;
-        indication.display_latency_port_0_stats(latency_stats[0]);
-    endrule
+//     rule send_latency_port_0_stats_to_connectal
+//             (fire_send_rx_port_stats_to_connectal[0] == 1);
+//         fire_send_latency_stats_to_connectal[0] <= 0;
+//         indication.display_latency_port_0_stats(latency_stats[0]);
+//     endrule
 /*------------------------------------------------------------------------------*/
-    rule get_latency_port_1_stats_from_sw;
-        let d <- sw.latency_res[1].get;
-        latency_stats[1] <= d;
-        fire_send_latency_stats_to_connectal[1] <= 1;
-    endrule
+//     rule get_latency_port_1_stats_from_sw;
+//         let d <- sw.latency_res[1].get;
+//         latency_stats[1] <= d;
+//         fire_send_latency_stats_to_connectal[1] <= 1;
+//     endrule
 
-    rule send_latency_port_1_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[1] == 1);
-        fire_send_latency_stats_to_connectal[1] <= 0;
-        indication.display_latency_port_1_stats(latency_stats[1]);
-    endrule
-/*------------------------------------------------------------------------------*/
-    rule get_latency_port_2_stats_from_sw;
-        let d <- sw.latency_res[2].get;
-        latency_stats[2] <= d;
-        fire_send_latency_stats_to_connectal[2] <= 1;
-    endrule
+//     rule send_latency_port_1_stats_to_connectal
+//             (fire_send_rx_port_stats_to_connectal[1] == 1);
+//         fire_send_latency_stats_to_connectal[1] <= 0;
+//         indication.display_latency_port_1_stats(latency_stats[1]);
+//     endrule
+// /*------------------------------------------------------------------------------*/
+//     rule get_latency_port_2_stats_from_sw;
+//         let d <- sw.latency_res[2].get;
+//         latency_stats[2] <= d;
+//         fire_send_latency_stats_to_connectal[2] <= 1;
+//     endrule
 
-    rule send_latency_port_2_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[2] == 1);
-        fire_send_latency_stats_to_connectal[2] <= 0;
-        indication.display_latency_port_2_stats(latency_stats[2]);
-    endrule
-/*------------------------------------------------------------------------------*/
-    rule get_latency_port_3_stats_from_sw;
-        let d <- sw.latency_res[3].get;
-        latency_stats[3] <= d;
-        fire_send_latency_stats_to_connectal[3] <= 1;
-    endrule
+//     rule send_latency_port_2_stats_to_connectal
+//             (fire_send_rx_port_stats_to_connectal[2] == 1);
+//         fire_send_latency_stats_to_connectal[2] <= 0;
+//         indication.display_latency_port_2_stats(latency_stats[2]);
+//     endrule
+// /*------------------------------------------------------------------------------*/
+//     rule get_latency_port_3_stats_from_sw;
+//         let d <- sw.latency_res[3].get;
+//         latency_stats[3] <= d;
+//         fire_send_latency_stats_to_connectal[3] <= 1;
+//     endrule
 
-    rule send_latency_port_3_stats_to_connectal
-            (fire_send_rx_port_stats_to_connectal[3] == 1);
-        fire_send_latency_stats_to_connectal[3] <= 0;
-        indication.display_latency_port_3_stats(latency_stats[3]);
-    endrule
-`endif
+//     rule send_latency_port_3_stats_to_connectal
+//             (fire_send_rx_port_stats_to_connectal[3] == 1);
+//         fire_send_latency_stats_to_connectal[3] <= 0;
+//         indication.display_latency_port_3_stats(latency_stats[3]);
+//     endrule
+// `endif
 /*------------------------------------------------------------------------------*/
 
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
@@ -747,66 +833,61 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 
         rule time_slots (fire_time_slots[i] == 1);
             fire_time_slots[i] <= 0;
-            case(i)
-               0: indication.display_time_slots_count_p0(time_slots_reg[i]);
-               1: indication.display_time_slots_count_p1(time_slots_reg[i]);
-               2: indication.display_time_slots_count_p2(time_slots_reg[i]);
-               3: indication.display_time_slots_count_p3(time_slots_reg[i]);
-            endcase
+            indication.display_time_slots_count(fromInteger(i), time_slots_reg[i]);
         endrule
     end
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        sent_host_pkt_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_sent_host_pkt <- replicateM(mkReg(0));
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         sent_host_pkt_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_sent_host_pkt <- replicateM(mkReg(0));
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule sent_host_pkt_rule;
-            let res <- scheduler.sent_host_pkt_res[i].get;
-            sent_host_pkt_reg[i] <= res;
-            fire_sent_host_pkt[i] <= 1;
-        endrule
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule sent_host_pkt_rule;
+//             let res <- scheduler.sent_host_pkt_res[i].get;
+//             sent_host_pkt_reg[i] <= res;
+//             fire_sent_host_pkt[i] <= 1;
+//         endrule
 
-        rule sent_host_pkt (fire_sent_host_pkt[i] == 1);
-            fire_sent_host_pkt[i] <= 0;
-            case(i)
-                0: indication.display_sent_host_pkt_count_p0(sent_host_pkt_reg[i]);
-                1: indication.display_sent_host_pkt_count_p1(sent_host_pkt_reg[i]);
-                2: indication.display_sent_host_pkt_count_p2(sent_host_pkt_reg[i]);
-                3: indication.display_sent_host_pkt_count_p3(sent_host_pkt_reg[i]);
-            endcase
-        endrule
-    end
+//         rule sent_host_pkt (fire_sent_host_pkt[i] == 1);
+//             fire_sent_host_pkt[i] <= 0;
+//             case(i)
+//                 0: indication.display_sent_host_pkt_count_p0(sent_host_pkt_reg[i]);
+//                 1: indication.display_sent_host_pkt_count_p1(sent_host_pkt_reg[i]);
+//                 2: indication.display_sent_host_pkt_count_p2(sent_host_pkt_reg[i]);
+//                 3: indication.display_sent_host_pkt_count_p3(sent_host_pkt_reg[i]);
+//             endcase
+//         endrule
+//     end
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        sent_fwd_pkt_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_sent_fwd_pkt <- replicateM(mkReg(0));
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         sent_fwd_pkt_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_sent_fwd_pkt <- replicateM(mkReg(0));
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule sent_fwd_pkt_rule;
-            let res <- scheduler.sent_fwd_pkt_res[i].get;
-            sent_fwd_pkt_reg[i] <= res;
-            fire_sent_fwd_pkt[i] <= 1;
-        endrule
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule sent_fwd_pkt_rule;
+//             let res <- scheduler.sent_fwd_pkt_res[i].get;
+//             sent_fwd_pkt_reg[i] <= res;
+//             fire_sent_fwd_pkt[i] <= 1;
+//         endrule
 
-        rule sent_fwd_pkt (fire_sent_fwd_pkt[i] == 1);
-            fire_sent_fwd_pkt[i] <= 0;
-            case(i)
-                0: indication.display_sent_fwd_pkt_count_p0(sent_fwd_pkt_reg[i]);
-                1: indication.display_sent_fwd_pkt_count_p1(sent_fwd_pkt_reg[i]);
-                2: indication.display_sent_fwd_pkt_count_p2(sent_fwd_pkt_reg[i]);
-                3: indication.display_sent_fwd_pkt_count_p3(sent_fwd_pkt_reg[i]);
-            endcase
-        endrule
-    end
+//         rule sent_fwd_pkt (fire_sent_fwd_pkt[i] == 1);
+//             fire_sent_fwd_pkt[i] <= 0;
+//             case(i)
+//                 0: indication.display_sent_fwd_pkt_count_p0(sent_fwd_pkt_reg[i]);
+//                 1: indication.display_sent_fwd_pkt_count_p1(sent_fwd_pkt_reg[i]);
+//                 2: indication.display_sent_fwd_pkt_count_p2(sent_fwd_pkt_reg[i]);
+//                 3: indication.display_sent_fwd_pkt_count_p3(sent_fwd_pkt_reg[i]);
+//             endcase
+//         endrule
+//     end
 
-/*------------------------------------------------------------------------------*/
+// /*------------------------------------------------------------------------------*/
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
         received_host_pkt_reg <- replicateM(mkReg(0));
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
@@ -822,107 +903,91 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 
         rule received_host_pkt (fire_received_host_pkt[i] == 1);
             fire_received_host_pkt[i] <= 0;
-            case(i)
-                0: indication.display_received_host_pkt_count_p0
-                    (received_host_pkt_reg[i]);
-                1: indication.display_received_host_pkt_count_p1
-                    (received_host_pkt_reg[i]);
-                2: indication.display_received_host_pkt_count_p2
-                    (received_host_pkt_reg[i]);
-                3: indication.display_received_host_pkt_count_p3
-                    (received_host_pkt_reg[i]);
-            endcase
+            indication.display_received_host_pkt_count(
+                fromInteger(i), received_host_pkt_reg[i]);
         endrule
     end
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        received_fwd_pkt_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_received_fwd_pkt <- replicateM(mkReg(0));
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         received_fwd_pkt_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_received_fwd_pkt <- replicateM(mkReg(0));
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule received_fwd_pkt_rule;
-            let res <- scheduler.received_fwd_pkt_res[i].get;
-            received_fwd_pkt_reg[i] <= res;
-            fire_received_fwd_pkt[i] <= 1;
-        endrule
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule received_fwd_pkt_rule;
+//             let res <- scheduler.received_fwd_pkt_res[i].get;
+//             received_fwd_pkt_reg[i] <= res;
+//             fire_received_fwd_pkt[i] <= 1;
+//         endrule
 
-        rule received_fwd_pkt (fire_received_fwd_pkt[i] == 1);
-            fire_received_fwd_pkt[i] <= 0;
-            case(i)
-                0: indication.display_received_fwd_pkt_count_p0
-                    (received_fwd_pkt_reg[i]);
-                1: indication.display_received_fwd_pkt_count_p1
-                    (received_fwd_pkt_reg[i]);
-                2: indication.display_received_fwd_pkt_count_p2
-                    (received_fwd_pkt_reg[i]);
-                3: indication.display_received_fwd_pkt_count_p3
-                    (received_fwd_pkt_reg[i]);
-            endcase
-        endrule
-    end
+//         rule received_fwd_pkt (fire_received_fwd_pkt[i] == 1);
+//             fire_received_fwd_pkt[i] <= 0;
+//             case(i)
+//                 0: indication.display_received_fwd_pkt_count_p0
+//                     (received_fwd_pkt_reg[i]);
+//                 1: indication.display_received_fwd_pkt_count_p1
+//                     (received_fwd_pkt_reg[i]);
+//                 2: indication.display_received_fwd_pkt_count_p2
+//                     (received_fwd_pkt_reg[i]);
+//                 3: indication.display_received_fwd_pkt_count_p3
+//                     (received_fwd_pkt_reg[i]);
+//             endcase
+//         endrule
+//     end
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        received_corrupted_pkt_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_received_corrupted_pkt <- replicateM(mkReg(0));
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         received_corrupted_pkt_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_received_corrupted_pkt <- replicateM(mkReg(0));
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule received_corrupted_pkt_rule;
-            let res <- scheduler.received_corrupted_pkt_res[i].get;
-            received_corrupted_pkt_reg[i] <= res;
-            fire_received_corrupted_pkt[i] <= 1;
-        endrule
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule received_corrupted_pkt_rule;
+//             let res <- scheduler.received_corrupted_pkt_res[i].get;
+//             received_corrupted_pkt_reg[i] <= res;
+//             fire_received_corrupted_pkt[i] <= 1;
+//         endrule
 
-        rule received_corrupted_pkt (fire_received_corrupted_pkt[i] == 1);
-            fire_received_corrupted_pkt[i] <= 0;
-            case(i)
-                0: indication.display_received_corrupted_pkt_count_p0
-                    (received_corrupted_pkt_reg[i]);
-                1: indication.display_received_corrupted_pkt_count_p1
-                    (received_corrupted_pkt_reg[i]);
-                2: indication.display_received_corrupted_pkt_count_p2
-                    (received_corrupted_pkt_reg[i]);
-                3: indication.display_received_corrupted_pkt_count_p3
-                    (received_corrupted_pkt_reg[i]);
-            endcase
-        endrule
-    end
+//         rule received_corrupted_pkt (fire_received_corrupted_pkt[i] == 1);
+//             fire_received_corrupted_pkt[i] <= 0;
+//             case(i)
+//                 0: indication.display_received_corrupted_pkt_count_p0
+//                     (received_corrupted_pkt_reg[i]);
+//                 1: indication.display_received_corrupted_pkt_count_p1
+//                     (received_corrupted_pkt_reg[i]);
+//                 2: indication.display_received_corrupted_pkt_count_p2
+//                     (received_corrupted_pkt_reg[i]);
+//                 3: indication.display_received_corrupted_pkt_count_p3
+//                     (received_corrupted_pkt_reg[i]);
+//             endcase
+//         endrule
+//     end
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        received_wrong_dst_pkt_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_received_wrong_dst_pkt <- replicateM(mkReg(0));
+// /*------------------------------------------------------------------------------*/
+	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    //     received_wrong_dst_pkt_reg <- replicateM(mkReg(0));
+	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+    //     fire_received_wrong_dst_pkt <- replicateM(mkReg(0));
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule received_wrong_dst_pkt_rule;
-            let res <- scheduler.received_wrong_dst_pkt_res[i].get;
-            received_wrong_dst_pkt_reg[i] <= res;
-            fire_received_wrong_dst_pkt[i] <= 1;
-        endrule
+    // for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    // begin
+    //     rule received_wrong_dst_pkt_rule;
+    //         let res <- scheduler.received_wrong_dst_pkt_res[i].get;
+    //         received_wrong_dst_pkt_reg[i] <= res;
+    //         fire_received_wrong_dst_pkt[i] <= 1;
+    //     endrule
 
-        rule received_wrong_dst_pkt (fire_received_wrong_dst_pkt[i] == 1);
-            fire_received_wrong_dst_pkt[i] <= 0;
-            case(i)
-                0: indication.display_received_wrong_dst_pkt_count_p0
-                    (received_wrong_dst_pkt_reg[i]);
-                1: indication.display_received_wrong_dst_pkt_count_p1
-                    (received_wrong_dst_pkt_reg[i]);
-                2: indication.display_received_wrong_dst_pkt_count_p2
-                    (received_wrong_dst_pkt_reg[i]);
-                3: indication.display_received_wrong_dst_pkt_count_p3
-                    (received_wrong_dst_pkt_reg[i]);
-            endcase
-        endrule
-    end
+    //     rule received_wrong_dst_pkt (fire_received_wrong_dst_pkt[i] == 1);
+    //         fire_received_wrong_dst_pkt[i] <= 0;
+    //         indication.display_received_wrong_dst_pkt_count(
+    //             fromInteger(i), received_wrong_dst_pkt_reg[i]);
+    //     endrule
+    // end
 
-/*------------------------------------------------------------------------------*/
+// /*------------------------------------------------------------------------------*/
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
         latency_reg <- replicateM(mkReg(0));
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
@@ -938,71 +1003,86 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 
         rule latency (fire_latency[i] == 1);
             fire_latency[i] <= 0;
-            case(i)
-                0: indication.display_latency_p0(latency_reg[i]);
-                1: indication.display_latency_p1(latency_reg[i]);
-                2: indication.display_latency_p2(latency_reg[i]);
-                3: indication.display_latency_p3(latency_reg[i]);
-            endcase
+            indication.display_latency(fromInteger(i), latency_reg[i]);
         endrule
     end
-/*------------------------------------------------------------------------------*/
+
+    /*------------------------------------------------------------------------------*/
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        blocks_trans_from_mac_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_blocks_trans_from_mac <- replicateM(mkReg(0));
+        max_fwd_buffer_length_reg <- replicateM(mkReg(0));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+        fire_buffer_length <- replicateM(mkReg(0));
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        rule blocks_trans_from_mac_rule;
-            let res <- mac.blocks_transmitted_from_mac[i].get;
-            blocks_trans_from_mac_reg[i] <= res;
-            fire_blocks_trans_from_mac[i] <= 1;
+        rule get_fwd_buf_len;
+            let res <- scheduler.max_fwd_buffer_length_res[i].get;
+            max_fwd_buffer_length_reg[i] <= res;
+            fire_buffer_length[i] <= 1;
         endrule
 
-        rule blocks_trans_from_mac (fire_blocks_trans_from_mac[i] == 1);
-            fire_blocks_trans_from_mac[i] <= 0;
-            case(i)
-                0: indication.display_num_of_blocks_transmitted_from_mac_p0
-                    (blocks_trans_from_mac_reg[i]);
-                1: indication.display_num_of_blocks_transmitted_from_mac_p1
-                    (blocks_trans_from_mac_reg[i]);
-                2: indication.display_num_of_blocks_transmitted_from_mac_p2
-                    (blocks_trans_from_mac_reg[i]);
-                3: indication.display_num_of_blocks_transmitted_from_mac_p3
-                    (blocks_trans_from_mac_reg[i]);
-            endcase
+        rule print_fwd_buf_len (fire_buffer_length[i] == 1);
+            fire_buffer_length[i] <= 0;
+            indication.display_buffer_length(fromInteger(i), max_fwd_buffer_length_reg[i]);
         endrule
     end
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         blocks_trans_from_mac_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_blocks_trans_from_mac <- replicateM(mkReg(0));
 
-/*------------------------------------------------------------------------------*/
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-        blocks_recvd_by_mac_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
-        fire_blocks_recvd_by_mac <- replicateM(mkReg(0));
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule blocks_trans_from_mac_rule;
+//             let res <- mac.blocks_transmitted_from_mac[i].get;
+//             blocks_trans_from_mac_reg[i] <= res;
+//             fire_blocks_trans_from_mac[i] <= 1;
+//         endrule
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule blocks_recvd_by_mac_rule;
-            let res <- mac.blocks_received_by_mac[i].get;
-            blocks_recvd_by_mac_reg[i] <= res;
-            fire_blocks_recvd_by_mac[i] <= 1;
-        endrule
+//         rule blocks_trans_from_mac (fire_blocks_trans_from_mac[i] == 1);
+//             fire_blocks_trans_from_mac[i] <= 0;
+//             case(i)
+//                 0: indication.display_num_of_blocks_transmitted_from_mac_p0
+//                     (blocks_trans_from_mac_reg[i]);
+//                 1: indication.display_num_of_blocks_transmitted_from_mac_p1
+//                     (blocks_trans_from_mac_reg[i]);
+//                 2: indication.display_num_of_blocks_transmitted_from_mac_p2
+//                     (blocks_trans_from_mac_reg[i]);
+//                 3: indication.display_num_of_blocks_transmitted_from_mac_p3
+//                     (blocks_trans_from_mac_reg[i]);
+//             endcase
+//         endrule
+//     end
 
-        rule blocks_recvd_by_mac (fire_blocks_recvd_by_mac[i] == 1);
-            fire_blocks_recvd_by_mac[i] <= 0;
-            case(i)
-                0: indication.display_num_of_blocks_received_by_mac_p0
-                    (blocks_recvd_by_mac_reg[i]);
-                1: indication.display_num_of_blocks_received_by_mac_p1
-                    (blocks_recvd_by_mac_reg[i]);
-                2: indication.display_num_of_blocks_received_by_mac_p2
-                    (blocks_recvd_by_mac_reg[i]);
-                3: indication.display_num_of_blocks_received_by_mac_p3
-                    (blocks_recvd_by_mac_reg[i]);
-            endcase
-        endrule
-    end
+// /*------------------------------------------------------------------------------*/
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+//         blocks_recvd_by_mac_reg <- replicateM(mkReg(0));
+// 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1)))
+//         fire_blocks_recvd_by_mac <- replicateM(mkReg(0));
+
+//     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+//     begin
+//         rule blocks_recvd_by_mac_rule;
+//             let res <- mac.blocks_received_by_mac[i].get;
+//             blocks_recvd_by_mac_reg[i] <= res;
+//             fire_blocks_recvd_by_mac[i] <= 1;
+//         endrule
+
+//         rule blocks_recvd_by_mac (fire_blocks_recvd_by_mac[i] == 1);
+//             fire_blocks_recvd_by_mac[i] <= 0;
+//             case(i)
+//                 0: indication.display_num_of_blocks_received_by_mac_p0
+//                     (blocks_recvd_by_mac_reg[i]);
+//                 1: indication.display_num_of_blocks_received_by_mac_p1
+//                     (blocks_recvd_by_mac_reg[i]);
+//                 2: indication.display_num_of_blocks_received_by_mac_p2
+//                     (blocks_recvd_by_mac_reg[i]);
+//                 3: indication.display_num_of_blocks_received_by_mac_p3
+//                     (blocks_recvd_by_mac_reg[i]);
+//             endcase
+//         endrule
+//     end
 
 /* ------------------------------------------------------------------------------
 *                               INTERFACE METHODS
@@ -1051,17 +1131,17 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
         sw.start(truncate(d), t);
     endrule
 
-    rule send_stat_request_to_sw (send_stat_request == 1);
-        send_stat_request <= 0;
-        for (Integer i = 0; i < valueOf(NUM_OF_SWITCH_PORTS); i = i + 1)
-        begin
-            sw.tx_port_stats_req[i].put(1);
-            sw.rx_port_stats_req[i].put(1);
-`ifdef CW_PHY_SIM
-            sw.latency_req[i].put(1);
-`endif
-        end
-    endrule
+//     rule send_stat_request_to_sw (send_stat_request == 1);
+//         send_stat_request <= 0;
+//         for (Integer i = 0; i < valueOf(NUM_OF_SWITCH_PORTS); i = i + 1)
+//         begin
+//             sw.tx_port_stats_req[i].put(1);
+//             sw.rx_port_stats_req[i].put(1);
+// `ifdef CW_PHY_SIM
+//             sw.latency_req[i].put(1);
+// `endif
+//         end
+//     endrule
 
 	rule start_scheduler_and_cg_req (fire_start_scheduler_and_cg_req == 1);
 		fire_start_scheduler_and_cg_req <= 0;

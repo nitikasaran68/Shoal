@@ -8,33 +8,12 @@ import Clocks::*;
 import Real::*;
 
 import Params::*;
+import ShaleUtil::*;
 import RingBufferTypes::*;
 import RingBuffer::*;
 
 `include "ConnectalProjectConfig.bsv"
 
-// But this doesn't have all the fields mentioned in Shoal paper?!
-typedef struct {
-    ServerIndex src_mac;
-    ServerIndex dst_mac;
-    ServerIndex src_ip;
-    ServerIndex dst_ip;
-    Bit#(16) seq_num;
-    Bit#(11) remote_queue_len;
-    Bit#(1) dummy_cell_bit;
-} Header deriving(Bits, Eq); //64 bits
-
-instance DefaultValue#(Header);
-    defaultValue = Header {
-        src_mac          : 0,
-        dst_mac          : 0,
-        src_ip           : 0,
-        dst_ip           : 0,
-        seq_num          : 0,
-        remote_queue_len : 0,
-        dummy_cell_bit   : 0
-    };
-endinstance
 
 interface CellGenerator;
     interface Put#(void) dummy_cell_req;
@@ -42,6 +21,7 @@ interface CellGenerator;
     interface Vector#(NUM_OF_SERVERS, Put#(void)) host_cell_req;
     interface Vector#(NUM_OF_SERVERS, Get#(ReadResType)) host_cell_res;
 
+    method Bool isEmpty(Integer i);
     method Action start(ServerIndex host_index, Bit#(16) rate);
     method Action stop();
 endinterface
@@ -121,7 +101,7 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
     Vector#(NUM_OF_SERVERS, Reg#(Bit#(16))) wait_period <- replicateM(mkReg(0));
     Vector#(NUM_OF_SERVERS, Reg#(Bit#(1)))
         prev_cell_put_in_buffer <- replicateM(mkReg(1));
-    Vector#(NUM_OF_SERVERS, Reg#(Bit#(16)))
+    Vector#(NUM_OF_SERVERS, Reg#(Bit#(14)))
         curr_seq_num <- replicateM(mkReg(0));
 
     for (Integer i = 0; i < valueof(NUM_OF_SERVERS); i = i + 1)
@@ -153,6 +133,9 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
                     h.dst_ip = fromInteger(i);
                     h.seq_num = curr_seq_num[i];
                     curr_seq_num[i] <= curr_seq_num[i] + 1;
+                    // Each local cell has h spray hops in total, including the first hop from the src.
+                    // So, all host cells should have remaining spray hops h-1.
+                    h.remaining_spraying_hops = fromInteger(valueof(NUM_OF_PHASES) - 1);
                 end
                 Bit#(HEADER_SIZE) hd = pack(h);
                 Bit#(BUS_WIDTH) data = {hd, '0};
@@ -174,7 +157,7 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
 
                 curr_host_block_num[i] <= curr_host_block_num[i] + 1;
 
-                if (verbose && host_index == 1)
+                if (verbose && host_index == 0)
                     $display("[DMA %d->%d] seq = %d data = %d %d %x",
                         host_index, i, curr_seq_num[i], sop, eop, data);
             endrule
@@ -274,17 +257,20 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
     interface host_cell_res = temp2;
 
     method Action start(ServerIndex idx, Bit#(16) rate);
-        if (verbose)
-            $display("[DMA (%d)] Starting..........................", idx);
+        $display("[DMA (%d)] Starting..........................", idx);
 		rate_reg <= rate;
 		host_index <= idx;
 		rate_set_flag <= 1;
     endmethod
 
     method Action stop();
-        if (verbose)
-            $display("[DMA (%d)] Stopping..........................", host_index);
+        $display("[DMA (%d)] Stopping..........................", host_index);
         start_flag <= 0;
+    endmethod
+
+    // TODO: Not sure if this is correct and/or efficient?
+    method Bool isEmpty(Integer i);
+        return host_buffer[i].empty;
     endmethod
 
 endmodule

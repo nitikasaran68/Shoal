@@ -9,6 +9,7 @@ import DefaultValue::*;
 `include "ConnectalProjectConfig.bsv"
 
 import SwParams::*;
+import ShaleUtil::*;
 
 import AlteraMacWrap::*;
 import EthMac::*;
@@ -390,7 +391,7 @@ module mkPhySwitch#(EthPhyIfc phys,
 
         rule transmit_data;
             let d <- toGet(data[j]).get;
-            if (verbose && d == ' )
+            if (verbose && d == 'h6a954aa552a954abfb)
                 $display("[SW] t = %d Recvd from rx", tx_counter);
             if (d == 'h6a954aa552a954abfb && latency_reg[j] == 0)
                 latency_reg[j] <= tx_counter - start_time[j];

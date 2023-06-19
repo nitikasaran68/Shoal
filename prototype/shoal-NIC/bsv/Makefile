@@ -1,6 +1,7 @@
 DEV_ROOT ?= $(HOME)
 CONNECTALDIR ?= $(DEV_ROOT)/connectal
-PROJECT_DIR = $(DEV_ROOT)/shoal-prototype/shoal-NIC
+PROJECT_DIR = $(DEV_ROOT)/Shoal/prototype/shoal-NIC
+PIEO_DIR = $(DEV_ROOT)/PIEO-Scheduler
 S2H_INTERFACES = SchedulerTopSimRequest:SchedulerTopSim.request
 H2S_INTERFACES = SchedulerTopSim:SchedulerTopSimIndication
 BSVFILES = $(PROJECT_DIR)/bsv/SchedulerTopSim.bsv
@@ -19,9 +20,10 @@ CONNECTALFLAGS += --bscflags="-show-range-conflict +RTS -K46777216 -RTS -demote-
 
 #ifeq ($(BOARD), vsim)
 CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/mac_10gbe
+CONNECTALFLAGS += --verilog $(PIEO_DIR)/RTL
 #endif
 
 prebuild::
-	(cd $(BOARD); BUILDCACHE_CACHEDIR=$(BUILDCACHE_CACHEDIR) $(BUILDCACHE) quartus_sh -t $(PROJECT_DIR)/../lib/scripts/generate-mac.tcl)
+	# (cd $(BOARD); BUILDCACHE_CACHEDIR=$(BUILDCACHE_CACHEDIR) $(BUILDCACHE) quartus_sh -t $(PROJECT_DIR)/../lib/scripts/generate-mac.tcl)
 
 include $(CONNECTALDIR)/Makefile.connectal
