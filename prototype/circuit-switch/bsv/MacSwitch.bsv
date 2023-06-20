@@ -331,6 +331,8 @@ module mkMacSwitch#(Clock txClock,
                     $display("[MACSW] t = %d Received cell at %d. Fwd to %d", rx_counter1, i, j);
                 end
 
+                // The switch changes it's connections each time it receives a 64 bit chunk
+                // with eop = 1. This is set by the NIC in Mac.bsv for the end of the CELL_SIZE bits.
                 if (reconfig_flag == 1 && d.eop == 1)
                     reconfigure[i].enq(?);
 

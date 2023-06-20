@@ -25,12 +25,33 @@ typedef struct {
     ServerIndex dst_mac;
     ServerIndex src_ip;
     ServerIndex dst_ip;
-    Phase src_mac_phase;            // 3 bits
-    Bit#(14) seq_num;
+    Phase src_mac_phase;                // 3 bits
+    Bit#(14) seq_num;                   
     Phase remaining_spraying_hops;      // 3 bits
-    Bit#(7) remote_queue_len;
-    Bit#(1) dummy_cell_bit;
-} Header deriving(Bits, Eq); // 64 bits
+    Token token1;                       // 12 bits
+    Token token2;                       // 12 bits
+    Bit#(1) dummy_cell_bit;            
+    Bit#(7) spare_padding;              // 7 bits 
+} Header deriving(Bits, Eq); // 88 bits
+
+// Before adding CC, header size was equal to the bits_per_cycle (64) for current h/w
+// typedef BITS_PER_CYCLE HEADER_SIZE; //size of cell header
+// TODO: check that it is totally okay if the header is bigger than this now?
+typedef 88 HEADER_SIZE;
+
+// Indices for fields in the header. 
+// NOTE: Must be changed if the header structure is changed!
+typedef 87 HDR_SRC_MAC_S; typedef 79 HDR_SRC_MAC_E; 
+typedef 78 HDR_DST_MAC_S; typedef 70 HDR_DST_MAC_E;
+typedef 69 HDR_SRC_IP_S; typedef 61 HDR_SRC_IP_E;
+typedef 60 HDR_DST_IP_S; typedef 52 HDR_DST_IP_E;
+typedef 51 HDR_SRC_PHASE_S; typedef 49 HDR_SRC_PHASE_E;
+typedef 48 HDR_SEQ_NUM_S; typedef 35 HDR_SEQ_NUM_E;
+typedef 34 HDR_SPRAY_HOPS_S; typedef 32 HDR_SPRAY_HOPS_E;
+typedef 31 HDR_TOKEN_1_S; typedef 20 HDR_TOKEN_1_E;
+typedef 19 HDR_TOKEN_2_S; typedef 8 HDR_TOKEN_2_E;
+typedef 7 HDR_DUMMY_BIT;
+
 
 instance DefaultValue#(Header);
     defaultValue = Header {
@@ -43,6 +64,23 @@ instance DefaultValue#(Header);
         remaining_spraying_hops : 0,
         remote_queue_len        : 0,
         dummy_cell_bit          : 0
+    };
+endinstance
+
+
+// Token for congestion control: each token is added to a bucket.
+// So token should contain info about which bucket. (dst, spray_hops_left)
+typedef struct {
+    ServerIndex dst_ip;
+    Phase remaining_spraying_hops;
+} Token deriving(Bits, Eq);     // 12 bits (9 + 3)
+
+typedef 12 TOKEN_SIZE;
+
+instance DefaultValue#(Header);
+    defaultValue = Header {
+        dst_ip                  : 0,
+        remaining_spraying_hops : 0
     };
 endinstance
 
@@ -95,9 +133,10 @@ function ServerIndex get_node_with_matching_coordinate(ServerIndex node, Coordin
 
 endfunction
 
+// ---------- Params for NIC -------------
+
 typedef 1024 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
-// For NIC
 typedef NUM_OF_SERVERS FWD_BUFFER_SIZE;
 
 // Module to pick a spraying hop at random, using the LFSR modules.

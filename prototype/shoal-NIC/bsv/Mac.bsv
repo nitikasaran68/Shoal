@@ -165,6 +165,8 @@ module mkMac#(Clock txClock,
             begin
                 if (j == 0) sop = d.sop;
                 else sop = 0;
+                // So, eop is set for the last 64-bit packet, of the last BUS_WIDTH chunk,
+                // of the cell with total size CELL_SIZE in params.
                 if (j == bus_chunks-1) eop = d.eop;
                 else eop = 0;
 
