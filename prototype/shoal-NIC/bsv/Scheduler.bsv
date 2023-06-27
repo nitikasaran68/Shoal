@@ -331,29 +331,31 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         rule send_cell (running[i] == 1);
             let d <- toGet(cell_to_send_fifo[i]).get;
 
-            ServerIndex dst_ip = d.data.payload[484:476];
-            Bit#(14) seq_num = d.data.payload[472:459];
-
             Bit#(HEADER_SIZE) h = curr_header[i];
             if (d.data.sop == 1)
             begin
-                Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
-                Integer s = valueof(BUS_WIDTH) - 1;
-                Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
-                h = d.data.payload[s:e] | x;
+                // Set mac layer information in header, once per cell sent.
+                h[HDR_SRC_MAC_S:HDR_SRC_MAC_E] = host_index[i];         // src_mac
+                h[HDR_DST_MAC_S:HDR_DST_MAC_E] = current_neighbor[i];   // dst_mac
+                h[HDR_SRC_PHASE_S:HDR_SRC_PHASE_E] = current_phase[i];  // src_mac_phase
+                
+                // TODO: Was Vishal doing this via a | operation:   
+                // Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
+                // Integer s = valueof(BUS_WIDTH) - 1;
+                // Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                // h = d.data.payload[s:e] | x;
                 curr_header[i] <= h;
             end
 
-            // Set mac layer information in header
-            // TODO: Was Vishal doing this??
-            h[63:55] = host_index[i];         // src_mac
-            h[54:46] = current_neighbor[i];   // dst_mac
-            h[27:25] = current_phase[i];      // src_mac_phase
+            ServerIndex dst_ip = h[HDR_DST_IP_S:HDR_DST_IP_E];
+            Bit#(14) seq_num = h[HDR_SEQ_NUM_S:HDR_SEQ_NUM_E];
 
+            // NOTE: Change this if header size changes!
+            // TODO: hard-coded index
             if (d.data.eop == 1)
-                d.data.payload = {h, h, h, h, h, h, h, current_time};
+                d.data.payload = {h, h, h, h, h, current_time};
             else
-                d.data.payload = {h, h, h, h, h, h, h, h};
+                d.data.payload = {h, h, h, h, h, h[87:16]};
 
             // Put to MAC interface.
             mac.mac_tx_write_req[i].put(d.data);
@@ -419,14 +421,27 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             if (d.sop == 1)
             begin
+                // TODO: hard-coded indices
+                // For first chunk (BUS_WIDTH size) of cell, extract header
+                hd = d.payload[511:424];
+                curr_rx_header[i] <= hd;
+
                 corrupted_cell = 0;
-                src_mac = d.payload[511:503];
-                dst_mac = d.payload[502:494];
-                src_ip = d.payload[493:485];
-                dst_ip = d.payload[484:476];
-                src_mac_phase = d.payload[475:473];
-                remaining_spraying_hops = d.payload[458:456];
-                dummy_bit = d.payload[448];
+                src_mac = hd[HDR_SRC_MAC_S: HDR_SRC_MAC_E];
+                dst_mac = hd[HDR_DST_MAC_S: HDR_DST_MAC_E];
+                src_ip = hd[HDR_SRC_IP_S: HDR_SRC_IP_E];
+                dst_ip = hd[HDR_DST_IP_S: HDR_DST_IP_E];
+                src_mac_phase = hd[HDR_SRC_PHASE_S: HDR_SRC_PHASE_E];
+                remaining_spraying_hops = hd[HDR_SPRAY_HOPS_S:HDR_SPRAY_HOPS_E];
+                dummy_bit = d.payload[HDR_DUMMY_BIT];
+
+                // src_mac = d.payload[511:503];
+                // dst_mac = d.payload[502:494];
+                // src_ip = d.payload[493:485];
+                // dst_ip = d.payload[484:476];
+                // src_mac_phase = d.payload[475:473];
+                // remaining_spraying_hops = d.payload[458:456];
+                // dummy_bit = d.payload[448];
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;
@@ -436,8 +451,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 curr_remaining_spray_hops[i] <= remaining_spraying_hops;
                 curr_dummy_bit[i] <= dummy_bit;
 
-                hd = d.payload[511:448];
-                curr_rx_header[i] <= hd;
+                
 
                 if (dst_mac != host_index[i])
                 begin
@@ -462,7 +476,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             // TODO: Fix all hard-coded indices, define these in RingBufferTypes? 
 
             // TODO: Assumes header size of 64 and BUS_WIDTH of 512, fixfor different values of these.
-            Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd, hd, hd};
+            Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd[87:16]};
 
             if (corrupted_cell == 0)
             begin
@@ -480,8 +494,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 else if (d.eop == 1)
                 begin
                 // For last packet, only the last BITS_PER_CYCLE bits will be set to time of sending instead of header, check everything else.
+                // TODO: hard-coded indices.
                     if (cell_size_cnt != fromInteger(valueof(CELL_SIZE))
-                        || d.payload[511:64] != c[511:64])
+                        || d.payload[511:72] != c[511:72])
                     begin
                         corrupted_cell = 1;
                         if(verbose)
@@ -495,13 +510,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         // Collect latency stats for the cell for a single hop at MAC layer (time_recvd - time_sent).
                         // This one-way delay could be skewed for different clocks at different FPGA boards without clock sync. 
                         // TODO: Shoal was counting corrupted packets towards latency stats as well? Also, only one data point, not agg.
-                        Bit#(64) send_time = d.payload[63:0];
-                        Bit#(64) latency = current_time - send_time;
+                        // TODO: hard-coded indices.
+                        Bit#(72) send_time = d.payload[71:0];
+                        Bit#(72) latency = current_time - send_time;
                         if (send_time != 0 && latency_reg[i] == 0)
                             latency_reg[i] <= latency;
 
                         if (verbose)
                         begin
+                            // hard-code indices.
                             $display("[SCHED %d] Received cell with src_mac=%d; src_ip=%d; dst_ip=%d; src_mac_phase=%d; seq_num=%x latency=%d cycles at phase=%d; send_time=%d; recv_time=%d",
                                         host_index[i], src_mac, src_ip, dst_ip, src_mac_phase, hd[24:11], latency, current_phase[i], send_time, current_time);
                         end
@@ -555,7 +572,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     end
                     
                     remaining_spraying_hops = remaining_spraying_hops - 1;
-                    d.payload[458:456] = remaining_spraying_hops;
+                    d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
                     if (verbose)
                         $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
                             host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, next_phase);
@@ -605,9 +622,25 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
         begin
 
-            // TODO: We do need dummy cells when no local flows either. Also, to select local flow,
-            // we want to pick the next flow in round robin that has cells to send. Giceb that we 
-            // currently just pick HOST and assume HOST cells exist, this will have to change significantly,  
+            // Update flow eligibility for each flow via current neighbor,
+            // based on tokens parsed in receive path.
+            // rule update_tokens;
+            //     let d <- toGet(update_tokens_fifo[i][j]).get;
+            //     if(token1 updated)
+            //         pieo_queue_id = get_bucket_id(token1.dst_ip, token1.remaining_spraying_hops);
+            //         Flow f = pieo.dequeue(pieo_queue_id);
+            //         f.predicate = True;
+            //         pieo.enqueue(f);
+            //     if(token2 updated)
+            //         pieo_queue_id = get_bucket_id(token2.dst_ip, token2.remaining_spraying_hops);
+            //         Flow f = pieo.dequeue(pieo_queue_id);
+            //         f.predicate = True;
+            //         pieo.enqueue(f);
+            //     choose_buffer_to_send_from_fifo[i][j].enq(?);
+            // endrule
+
+            // To select local flow to send, we want to pick the next flow 
+            // in round robin that has cells to send.  
             rule choose_buffer_to_send_from;
                 let d <- toGet(choose_buffer_to_send_from_fifo[i][j]).get;
 
@@ -625,6 +658,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // ------- pick host flow to send -----------
                     // Initialize dst with next_local_flow_idx[i]
                     // TODO: No easy way to convert from ServerIndex to dst?
+                    // TODO: There has to be a better way to do this!! Ex: PIEO?
                     Integer dst = 0;
                     for(Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
                         if (next_local_flow_idx[i] == fromInteger(k))
