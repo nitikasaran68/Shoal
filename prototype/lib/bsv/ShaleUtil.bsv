@@ -7,13 +7,13 @@ import GetPut::*;
 import DefaultValue::*;
 
 // NOTE: If you change these, Header might change as well.
-typedef 8 NUM_OF_SERVERS;       // N
-typedef 3 NUM_OF_PHASES;        // h
+typedef 4 NUM_OF_SERVERS;       // N
+typedef 2 NUM_OF_PHASES;        // h
 typedef 2 NODES_PER_PHASE;       // (N ** 1/h)
 typedef 1 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
 // NOTE: Add a margin of 1 bit to Coordinate and Phase, because
 // we will be doing add & mod operations to increment these.
-typedef Bit#(2) Coordinate;     // >= 1 + ceil(log_2(NODES_PER_PHASE)) bits to store each node's index within phase.
+typedef Bit#(3) Coordinate;     // >= 1 + ceil(log_2(NODES_PER_PHASE)) bits to store each node's index within phase.
 typedef Bit#(3) Phase;          // >= 1 + ceil(log_2(NUM_OF_PHASES)) bits to store phase.
 
 typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
@@ -95,9 +95,10 @@ function ServerIndex get_node_with_matching_coordinate(ServerIndex node, Coordin
 
 endfunction
 
-typedef 1024 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
+typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
 // For NIC
+// Each (dst, spray_hops) bucket can have one pkt per node. Total buffer size = h x N
 typedef NUM_OF_SERVERS FWD_BUFFER_SIZE;
 
 // Module to pick a spraying hop at random, using the LFSR modules.

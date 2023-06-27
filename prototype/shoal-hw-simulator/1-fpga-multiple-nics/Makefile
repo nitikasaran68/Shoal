@@ -12,6 +12,7 @@ CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../circuit-switch/bsv/
 CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../shoal-NIC/bsv/
 CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../lib/bsv/
 CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../lib/generated/
+CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../../lib/pieo/
 
 # This flag enables PhySwitch instead of MacSwitch
 # CONNECTALFLAGS += -D CW_PHY_SIM
@@ -20,11 +21,13 @@ CONNECTALFLAGS += -D NIC_SIM
 CONNECTALFLAGS += -D MULTI_NIC
 #CONNECTALFLAGS += -D SHOAL
 
-CONNECTALFLAGS += --bscflags="-show-schedule -show-range-conflict +RTS -K46777216 -RTS -demote-errors G0066:G0045 -suppress-warnings G0046:G0020:S0015:S0080:S0039 -steps-max-intervals 20"
+CONNECTALFLAGS += --bscflags="-show-schedule -show-range-conflict +RTS -K93554432 -RTS -demote-errors G0066:G0045 -suppress-warnings G0046:G0020:S0015:S0080:S0039 -steps-max-intervals 20"
 
 #ifeq ($(BOARD), vsim)
 CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/mac_10gbe
 CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/altera_xcvr_10gbaser_wrapper
+CONNECTALFLAGS += --verilog $(PROJECT_DIR)/../../lib/pieo_rtl
+
 #endif
 
 prebuild::

@@ -7,6 +7,7 @@ import BRAM::*;
 import GetPut::*;
 import DefaultValue::*;
 import Clocks::*;
+import PIEOQueue::*;
 
 import Params::*;
 import ShaleUtil::*;
@@ -211,18 +212,22 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             
             // Timelsot ends after current cycle.
             if (clock_within_timeslot[i] == timeslot_len - 1)
-                begin
+            begin
                 clock_within_timeslot[i] <= 0;
 
                 // Updates timeslot, phase, and epoch values for next clock cycle.
                 current_timeslot[i] <= (current_timeslot[i] + 1)
                         % fromInteger(valueof(PHASE_SIZE));
-                if (current_timeslot[i] == 0)                   // New phase.
+                // New phase - check old value of current_timeslot.
+                if (current_timeslot[i] == fromInteger(valueof(PHASE_SIZE)-1)) 
+                begin                  
                     current_phase[i] <= (current_phase[i] + 1) 
                         % fromInteger(valueof(NUM_OF_PHASES));
-                if (current_phase[i] == 0)                      // New epoch.
-                    current_epoch[i] <= current_epoch[i] + 1;
+                    // New epoch - check old value of phase.
+                    if (current_phase[i] == fromInteger(valueof(NUM_OF_PHASES)-1))                      
+                        current_epoch[i] <= current_epoch[i] + 1;
                 end
+            end
             else
                 clock_within_timeslot[i] <= clock_within_timeslot[i] + 1;
         endrule
@@ -235,6 +240,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     /*------------------------------------------------------------------------------*/
 
     // BRAM to store cells to forward.
+    // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
+    // but then need some way to idx by nbr host_idx. May need to make an interacing module.
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS,
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))
             fwd_buffer <- replicateM(replicateM
@@ -523,20 +530,35 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
                 if (remaining_spraying_hops > 0)
                 begin
-                    Bit#(3) spray_slot = 0;
                     Phase next_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
                     
-                    // We only need to select random hop if there is more than one hop possible.
-                    if (valueof(PHASE_SIZE) > 1)
-                    begin  
-                        spray_slot <- rng_hop.get;
+                    // Select random hop if there is more than one hop possible.
+                    // Bit#(3) spray_slot = 0;                    
+                    // if (valueof(PHASE_SIZE) > 1)
+                    // begin  
+                    //     spray_slot <- rng_hop.get;
+                    //     if(verbose) $display("Random hop selected: %d", spray_slot);
+                    // end
+                    // next_hop = schedule_table[i][next_phase][spray_slot];
+
+                    // Spray short.
+                    Bit#(64) min_buffer_len = fromInteger(valueof(FWD_BUFFER_SIZE));
+                    for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
+                    begin
+                        ServerIndex nbr = schedule_table[i][next_phase][j];
+                        Bit#(64) len = fwd_buffer[i][nbr].elements;
+                        if(min_buffer_len > len)
+                        begin
+                            min_buffer_len = len;
+                            next_hop = nbr;
+                        end
                     end
-                    next_hop = schedule_table[i][next_phase][spray_slot];
+                    
                     remaining_spraying_hops = remaining_spraying_hops - 1;
                     d.payload[458:456] = remaining_spraying_hops;
                     if (verbose)
-                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d remaining spraying hops=%d on phase %d", 
-                            host_index[i], next_hop, remaining_spraying_hops, next_phase);
+                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
+                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, next_phase);
                 end
                 else
                 begin

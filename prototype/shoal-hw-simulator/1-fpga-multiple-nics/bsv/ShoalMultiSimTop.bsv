@@ -347,7 +347,7 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
         rule start_shoal (host_index_ready == 1
                         && rate_ready == 1
                         && timeslot_ready == 1);
-            // TODO: WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
+            // TODO: In Shoal, WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
             if (rate != 0)
                 cg[i].start(fromInteger(i), rate);
 

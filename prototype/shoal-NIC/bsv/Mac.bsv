@@ -281,6 +281,7 @@ module mkMac#(Clock txClock,
                 end
             end
 
+            // Only process the pkt if not the first, for start signal wait option.
             else
     `else
             if (True)

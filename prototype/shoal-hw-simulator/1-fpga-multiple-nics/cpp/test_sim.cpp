@@ -14,12 +14,43 @@ static uint32_t timeslot = 0; //timeslot length
 static uint64_t cycles = 0; //num of cycles to run exp for
 
 static uint16_t chunk_num = 8;
+static uint16_t run_index = 0;
 
 static ShoalMultiSimTopRequestProxy *device = 0;
 
 class ShoalMultiSimTopIndication : public ShoalMultiSimTopIndicationWrapper
 {
 public:
+
+    /* -----------------   NEW STATS -----------------------*/
+
+    virtual void display_latency(uint16_t idx, uint64_t count) {
+        // fprintf(stderr, "[P%u] LATENCY = %lu cycles\n", idx, count);
+        fprintf(stderr, "run_idx=%u, node_idx=%u, latency_in_cycles=%lu\n", run_index, idx, count);
+    }
+
+    virtual void display_buffer_length(uint16_t idx, uint64_t count) {
+        // fprintf(stderr, "[P%u] MAX BUFFER LEN = %lu\n", idx, count);
+        fprintf(stderr, "run_idx=%u, node_idx=%u, max_buffer_len=%lu\n", run_index, idx, count);
+    }
+
+	virtual void display_time_slots_count(uint16_t idx, uint64_t count) {
+		// fprintf(stderr, "\n[P%u] TIME SLOTS = %lu\n", idx, count);
+        fprintf(stderr, "run_idx=%u, node_idx=%u, num_time_slots=%lu\n", run_index, idx, count);
+	}
+
+    virtual void display_received_wrong_dst_pkt_count(uint16_t idx, uint64_t count) {
+		// fprintf(stderr, "[P%u] RECEIVED WRONG DST PKT = %lu\n", idx, count);
+        fprintf(stderr, "run_idx=%u, node_idx=%u, num_wrong_pkts_recvd=%lu\n", run_index, idx, count);
+	}
+
+    virtual void display_received_host_pkt_count(uint16_t idx, uint64_t count) {
+		// fprintf(stderr, "[P%u] RECEIVED HOST PKT = %lu\n", idx, count);
+        fprintf(stderr, "run_idx=%u, node_idx=%u, num_total_pkts_recvd=%lu\n", run_index, idx, count);
+	}
+
+    /* -----------------   OLD STATS -----------------------*/
+    
     virtual void display_tx_port_0_stats(uint64_t sop,
                                         uint64_t eop,
                                         uint64_t blocks,
@@ -130,9 +161,6 @@ public:
 	virtual void display_received_corrupted_pkt_count_p0(uint64_t count) {
 		fprintf(stderr, "[P0] RECEIVED CORRUPTED PKT = %lu\n", count);
 	}
-	virtual void display_received_wrong_dst_pkt_count(uint16_t idx, uint64_t count) {
-		fprintf(stderr, "[P%u] RECEIVED WRONG DST PKT = %lu\n", idx, count);
-	}
     virtual void display_num_of_blocks_transmitted_from_mac_p0(uint64_t count) {
         fprintf(stderr, "[P0] BLOCKS TRANS FROM MAC = %lu (%lu)\n", count,
                 count/chunk_num);
@@ -141,25 +169,11 @@ public:
         fprintf(stderr, "[P0] BLOCKS RECVD BY MAC = %lu (%lu)\n", count,
                 count/chunk_num);
     }
-    virtual void display_latency(uint16_t idx, uint64_t count) {
-        fprintf(stderr, "[P%u] LATENCY = %lu cycles\n", idx, count);
-    }
-
-    virtual void display_buffer_length(uint16_t idx, uint64_t count) {
-        fprintf(stderr, "[P%u] MAX BUFFER LEN = %lu\n", idx, count);
-    }
-
-	virtual void display_time_slots_count(uint16_t idx, uint64_t count) {
-		fprintf(stderr, "\n[P%u] TIME SLOTS = %lu\n", idx, count);
-	}
 	virtual void display_sent_host_pkt_count_p1(uint64_t count) {
 		fprintf(stderr, "[P1] SENT HOST PKT = %lu\n", count);
 	}
 	virtual void display_sent_fwd_pkt_count_p1(uint64_t count) {
 		fprintf(stderr, "[P1] SENT FWD PKT = %lu\n", count);
-	}
-	virtual void display_received_host_pkt_count(uint16_t idx, uint64_t count) {
-		fprintf(stderr, "[P%u] RECEIVED HOST PKT = %lu\n", idx, count);
 	}
 	virtual void display_received_fwd_pkt_count_p1(uint64_t count) {
 		fprintf(stderr, "[P1] RECEIVED FWD PKT = %lu\n", count);
@@ -270,6 +284,7 @@ int main(int argc, char **argv)
         chunk_num = (atoi(argv[8]) * 8) / 64;
     }
 
+    //  Run experiment i times.
     for (i = 0; i < 3; ++i) {
         printf("********* Starting i = %d **********\n", i);
         device->startSwitching(atoi(argv[1]), atol(argv[2]));
