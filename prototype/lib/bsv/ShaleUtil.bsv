@@ -7,8 +7,8 @@ import GetPut::*;
 import DefaultValue::*;
 
 // NOTE: If you change these, Header might change as well.
-typedef 4 NUM_OF_SERVERS;       // N
-typedef 2 NUM_OF_PHASES;        // h
+typedef 8 NUM_OF_SERVERS;       // N
+typedef 3 NUM_OF_PHASES;        // h
 typedef 2 NODES_PER_PHASE;       // (N ** 1/h)
 typedef 1 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
 // NOTE: Add a margin of 1 bit to Coordinate and Phase, because
@@ -20,6 +20,7 @@ typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
 // But this doesn't have all the fields mentioned in Shoal paper?!
 // NOTE: If you change header format, also change offset values used in Scheduler.
+// TODO: Can reduce this to 64 bits if we cut down ServerIndex size.
 typedef struct {
     ServerIndex src_mac;                // 9 bits
     ServerIndex dst_mac;
@@ -62,8 +63,8 @@ instance DefaultValue#(Header);
         src_mac_phase           : 0,
         seq_num                 : 0,
         remaining_spraying_hops : 0,
-        remote_queue_len        : 0,
-        dummy_cell_bit          : 0
+        dummy_cell_bit          : 0,
+        spare_padding           : 0
     };
 endinstance
 
@@ -77,8 +78,8 @@ typedef struct {
 
 typedef 12 TOKEN_SIZE;
 
-instance DefaultValue#(Header);
-    defaultValue = Header {
+instance DefaultValue#(Token);
+    defaultValue = Token {
         dst_ip                  : 0,
         remaining_spraying_hops : 0
     };

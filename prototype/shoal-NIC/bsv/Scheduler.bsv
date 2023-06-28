@@ -20,36 +20,36 @@ import Mac::*;
 `include "ConnectalProjectConfig.bsv"
 
 interface Scheduler;
-    // Responses to stats request?
-	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+    // Responses to stats request.
+    interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
         time_slots_res;
-	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        received_host_pkt_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        received_wrong_dst_pkt_res;
+	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(72)))
+        latency_res;
+    interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
+        max_fwd_buffer_length_res;
+    // interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     sent_host_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     sent_fwd_pkt_res;
-	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-        received_host_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     received_fwd_pkt_res;
 	// interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
     //     received_corrupted_pkt_res;
-	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-        received_wrong_dst_pkt_res;
-	interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-        latency_res;
-    interface Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64)))
-        max_fwd_buffer_length_res;
 
-    // // Stats
+    // Stats
     method Action timeSlotsCount();
-	// method Action sentHostPktCount();
-	// method Action sentFwdPktCount();
 	method Action receivedHostPktCount();
-	// method Action receivedFwdPktCount();
-	// method Action receivedCorruptedPktCount();
 	method Action receivedWrongDstPktCount();
     method Action latency();
     method Action max_fwd_buffer_length();
+    // method Action sentHostPktCount();
+	// method Action sentFwdPktCount();
+    // method Action receivedFwdPktCount();
+	// method Action receivedCorruptedPktCount();
 
     method Action start(ServerIndex first_host_index, Bit#(8) t);
     method Action stop();
@@ -69,7 +69,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(1))) running <- replicateM(mkReg(0));
 
     // Clock for stats.
-    Reg#(Bit#(64)) current_time <- mkReg(0);
+    Reg#(Bit#(72)) current_time <- mkReg(0);
     rule clk;
         current_time <= current_time + 1;
     endrule
@@ -120,41 +120,42 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     /* ---------------- Stats ----------------- */
 	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) time_slots_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_host_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_fwd_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_host_pkt_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_fwd_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_corrupted_pkt_fifo
-	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	
 	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_wrong_dst_pkt_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
-	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) latency_fifo
+	Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(72))) latency_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
     Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) buffer_length_fifo
 	        <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+    // Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_host_pkt_fifo
+	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) sent_fwd_pkt_fifo
+	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+    // Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_fwd_pkt_fifo
+	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
+	// Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(Bit#(64))) received_corrupted_pkt_fifo
+	//         <- replicateM(mkSyncFIFO(1, defaultClock, defaultReset, pcieClock));
 
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) num_of_time_slots_used_reg
         <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) host_pkt_transmitted_reg
-    //     <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) non_host_pkt_transmitted_reg
-    //     <- replicateM(mkReg(0));
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
         num_of_host_pkt_received_reg <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-    //     num_of_fwd_pkt_received_reg <- replicateM(mkReg(0));
-	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
-    //     num_of_corrupted_pkt_received_reg <- replicateM(mkReg(0));
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
         num_of_wrong_dst_pkt_received_reg <- replicateM(mkReg(0));
-	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(72)))
         latency_reg <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
         max_fwd_buffer_length_reg <- replicateM(mkReg(0));
+    // Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) host_pkt_transmitted_reg
+    //     <- replicateM(mkReg(0));
+	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) non_host_pkt_transmitted_reg
+    //     <- replicateM(mkReg(0));
+    // Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    //     num_of_fwd_pkt_received_reg <- replicateM(mkReg(0));
+	// Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    //     num_of_corrupted_pkt_received_reg <- replicateM(mkReg(0));
 
 /*------------------------------------------------------------------------------*/
 
@@ -334,21 +335,23 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             Bit#(HEADER_SIZE) h = curr_header[i];
             if (d.data.sop == 1)
             begin
+                Integer s = valueof(BUS_WIDTH) - 1;
+                Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                h = d.data.payload[s:e];
+
                 // Set mac layer information in header, once per cell sent.
-                h[HDR_SRC_MAC_S:HDR_SRC_MAC_E] = host_index[i];         // src_mac
-                h[HDR_DST_MAC_S:HDR_DST_MAC_E] = current_neighbor[i];   // dst_mac
-                h[HDR_SRC_PHASE_S:HDR_SRC_PHASE_E] = current_phase[i];  // src_mac_phase
-                
+                h[valueof(HDR_SRC_MAC_S):valueof(HDR_SRC_MAC_E)] = host_index[i];         // src_mac
+                h[valueof(HDR_DST_MAC_S):valueof(HDR_DST_MAC_E)] = current_neighbor[i];   // dst_mac
+                h[valueof(HDR_SRC_PHASE_S):valueof(HDR_SRC_PHASE_E)] = current_phase[i];  // src_mac_phase
                 // TODO: Was Vishal doing this via a | operation:   
                 // Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
-                // Integer s = valueof(BUS_WIDTH) - 1;
-                // Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
                 // h = d.data.payload[s:e] | x;
+
                 curr_header[i] <= h;
             end
 
-            ServerIndex dst_ip = h[HDR_DST_IP_S:HDR_DST_IP_E];
-            Bit#(14) seq_num = h[HDR_SEQ_NUM_S:HDR_SEQ_NUM_E];
+            ServerIndex dst_ip = h[valueof(HDR_DST_IP_S):valueof(HDR_DST_IP_E)];
+            Bit#(14) seq_num = h[valueof(HDR_SEQ_NUM_S):valueof(HDR_SEQ_NUM_E)];
 
             // NOTE: Change this if header size changes!
             // TODO: hard-coded index
@@ -427,21 +430,13 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 curr_rx_header[i] <= hd;
 
                 corrupted_cell = 0;
-                src_mac = hd[HDR_SRC_MAC_S: HDR_SRC_MAC_E];
-                dst_mac = hd[HDR_DST_MAC_S: HDR_DST_MAC_E];
-                src_ip = hd[HDR_SRC_IP_S: HDR_SRC_IP_E];
-                dst_ip = hd[HDR_DST_IP_S: HDR_DST_IP_E];
-                src_mac_phase = hd[HDR_SRC_PHASE_S: HDR_SRC_PHASE_E];
-                remaining_spraying_hops = hd[HDR_SPRAY_HOPS_S:HDR_SPRAY_HOPS_E];
-                dummy_bit = d.payload[HDR_DUMMY_BIT];
-
-                // src_mac = d.payload[511:503];
-                // dst_mac = d.payload[502:494];
-                // src_ip = d.payload[493:485];
-                // dst_ip = d.payload[484:476];
-                // src_mac_phase = d.payload[475:473];
-                // remaining_spraying_hops = d.payload[458:456];
-                // dummy_bit = d.payload[448];
+                src_mac = hd[valueof(HDR_SRC_MAC_S): valueof(HDR_SRC_MAC_E)];
+                dst_mac = hd[valueof(HDR_DST_MAC_S): valueof(HDR_DST_MAC_E)];
+                src_ip = hd[valueof(HDR_SRC_IP_S): valueof(HDR_SRC_IP_E)];
+                dst_ip = hd[valueof(HDR_DST_IP_S): valueof(HDR_DST_IP_E)];
+                src_mac_phase = hd[valueof(HDR_SRC_PHASE_S): valueof(HDR_SRC_PHASE_E)];
+                remaining_spraying_hops = hd[valueof(HDR_SPRAY_HOPS_S):valueof(HDR_SPRAY_HOPS_E)];
+                dummy_bit = hd[valueof(HDR_DUMMY_BIT)];
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;
@@ -475,7 +470,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             // ------------- Check for corruption + deliver, completely taken from Shoal ------------
             // TODO: Fix all hard-coded indices, define these in RingBufferTypes? 
 
-            // TODO: Assumes header size of 64 and BUS_WIDTH of 512, fixfor different values of these.
+            // TODO: Assumes header size of 64 and BUS_WIDTH of 512, fix for different values of these.
+            // Last header chunk is of size BUS_WIDTH % header size.
             Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd[87:16]};
 
             if (corrupted_cell == 0)
@@ -493,7 +489,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 end
                 else if (d.eop == 1)
                 begin
-                // For last packet, only the last BITS_PER_CYCLE bits will be set to time of sending instead of header, check everything else.
+                // For last packet, only the last (BUS_WIDTH % header size) bits will be set to time of sending instead of header, check everything else.
                 // TODO: hard-coded indices.
                     if (cell_size_cnt != fromInteger(valueof(CELL_SIZE))
                         || d.payload[511:72] != c[511:72])
@@ -519,8 +515,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         if (verbose)
                         begin
                             // hard-code indices.
-                            $display("[SCHED %d] Received cell with src_mac=%d; src_ip=%d; dst_ip=%d; src_mac_phase=%d; seq_num=%x latency=%d cycles at phase=%d; send_time=%d; recv_time=%d",
-                                        host_index[i], src_mac, src_ip, dst_ip, src_mac_phase, hd[24:11], latency, current_phase[i], send_time, current_time);
+                            Bit#(14) seq_num = hd[valueof(HDR_SEQ_NUM_S):valueof(HDR_SEQ_NUM_E)];
+                            $display("[SCHED %d] Received cell with src_mac=%d; src_ip=%d; dst_ip=%d; src_mac_phase=%d; seq_num=%d latency=%d cycles at phase=%d; send_time=%d; recv_time=%d",
+                                        host_index[i], src_mac, src_ip, dst_ip, src_mac_phase, seq_num, latency, current_phase[i], send_time, current_time);
                         end
                         if (dst_ip == host_index[i])
                             num_of_host_pkt_received_reg[i]
@@ -572,6 +569,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     end
                     
                     remaining_spraying_hops = remaining_spraying_hops - 1;
+                    // TODO: This shouldn't be set here, in Tx.
                     d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
                     if (verbose)
                         $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
@@ -740,26 +738,26 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 `endif
 
     Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp1;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp4;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp7;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(72))) temp8;
+    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp9;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp2;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp3;
-    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp4;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp5;
     // Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp6;
-    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp7;
-    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp8;
-    Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp9;
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
         temp1[i] = toGet(time_slots_fifo[i]);
-    //     temp2[i] = toGet(sent_host_pkt_fifo[i]);
-    //     temp3[i] = toGet(sent_fwd_pkt_fifo[i]);
         temp4[i] = toGet(received_host_pkt_fifo[i]);
-    //     temp5[i] = toGet(received_fwd_pkt_fifo[i]);
-    //     temp6[i] = toGet(received_corrupted_pkt_fifo[i]);
         temp7[i] = toGet(received_wrong_dst_pkt_fifo[i]);
         temp8[i] = toGet(latency_fifo[i]);
         temp9[i] = toGet(buffer_length_fifo[i]);
+    //     temp2[i] = toGet(sent_host_pkt_fifo[i]);
+    //     temp3[i] = toGet(sent_fwd_pkt_fifo[i]);
+    //     temp5[i] = toGet(received_fwd_pkt_fifo[i]);
+    //     temp6[i] = toGet(received_corrupted_pkt_fifo[i]);
     end
 
     // Should prob change name from first_host_index to fpga_idx or altera_idx
@@ -789,31 +787,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             time_slots_fifo[i].enq(num_of_time_slots_used_reg[i]);
     endmethod
 
-	// method Action sentHostPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         sent_host_pkt_fifo[i].enq(host_pkt_transmitted_reg[i]);
-	// endmethod
-
-	// method Action sentFwdPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         sent_fwd_pkt_fifo[i].enq(non_host_pkt_transmitted_reg[i]);
-	// endmethod
-
 	method Action receivedHostPktCount();
         for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
             received_host_pkt_fifo[i].enq(num_of_host_pkt_received_reg[i]);
 	endmethod
-
-	// method Action receivedFwdPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         received_fwd_pkt_fifo[i].enq(num_of_fwd_pkt_received_reg[i]);
-	// endmethod
-
-	// method Action receivedCorruptedPktCount();
-    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    //         received_corrupted_pkt_fifo[i].enq
-    //             (num_of_corrupted_pkt_received_reg[i]);
-	// endmethod
 
 	method Action receivedWrongDstPktCount();
         for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
@@ -831,13 +808,35 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             buffer_length_fifo[i].enq(max_fwd_buffer_length_reg[i]);
     endmethod
 
+
+	// method Action sentHostPktCount();
+    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    //         sent_host_pkt_fifo[i].enq(host_pkt_transmitted_reg[i]);
+	// endmethod
+
+	// method Action sentFwdPktCount();
+    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    //         sent_fwd_pkt_fifo[i].enq(non_host_pkt_transmitted_reg[i]);
+	// endmethod
+
+    // method Action receivedFwdPktCount();
+    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    //         received_fwd_pkt_fifo[i].enq(num_of_fwd_pkt_received_reg[i]);
+	// endmethod
+
+	// method Action receivedCorruptedPktCount();
+    //     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    //         received_corrupted_pkt_fifo[i].enq
+    //             (num_of_corrupted_pkt_received_reg[i]);
+	// endmethod
+
 	interface Get time_slots_res = temp1;
-	// interface Get sent_host_pkt_res = temp2;
-	// interface Get sent_fwd_pkt_res = temp3;
 	interface Get received_host_pkt_res = temp4;
-	// interface Get received_fwd_pkt_res = temp5;
-	// interface Get received_corrupted_pkt_res = temp6;
 	interface Get received_wrong_dst_pkt_res = temp7;
 	interface Get latency_res = temp8;
     interface Get max_fwd_buffer_length_res = temp9;
+    // interface Get sent_host_pkt_res = temp2;
+	// interface Get sent_fwd_pkt_res = temp3;
+	// interface Get received_fwd_pkt_res = temp5;
+	// interface Get received_corrupted_pkt_res = temp6;
 endmodule

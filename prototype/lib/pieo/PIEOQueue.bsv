@@ -5,6 +5,8 @@ import GetPut::*;
 
 // NOTE: Set these according to pieo_datatypes.sv !!
 
+// TODO: PIEO_LIST_SIZE should be the same as FWD_BUFFER_SIZE
+
 typedef 64 PIEO_LIST_SIZE;      // Max number of elements in PIEO queue.
 typedef 6 ID_LOG;               // clog2(PIEO_LIST_SIZE) bits to store max flow ID
 typedef 16 RANK_LOG;            // bits to store flow rank
@@ -63,6 +65,7 @@ module mkPIEOQueue (PIEOQueue);
                             get_enqueue_sublist_id, 
                             get_flow_id_moved, 
                             get_flow_id_moved_sublist);
+    schedule start C start;
     schedule (dequeue_f, dequeue, enqueue) C (dequeue_f, dequeue, enqueue);
     schedule (get_dequeue_result, 
                 get_enqueue_sublist_id, 

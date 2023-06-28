@@ -997,7 +997,7 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
     begin
         rule latency_rule;
             let res <- scheduler.latency_res[i].get;
-            latency_reg[i] <= res;
+            latency_reg[i] <= truncate(res);
             fire_latency[i] <= 1;
         endrule
 
