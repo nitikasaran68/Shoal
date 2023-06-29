@@ -178,8 +178,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         current_neighbor <- replicateM(mkReg(maxBound));
 
     // Signal FIFO to trigger choice of cell to send.
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS, FIFO#(void)))
-        choose_buffer_to_send_from_fifo <- replicateM(replicateM(mkFIFO));
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, FIFO#(void))))
+        choose_buffer_to_send_from_fifo <- replicateM(replicateM(replicateM(mkFIFO)));
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
@@ -208,7 +208,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                             host_index[i], current_time, current_phase[i], current_timeslot[i], d);
 
                     // Choose whether to send local or remote cells in this timeslot.
-                    choose_buffer_to_send_from_fifo[i][d].enq(?);
+                    choose_buffer_to_send_from_fifo[i][current_phase[i]][current_timeslot[i]].enq(?);
                 end
             
             // Timelsot ends after current cycle.
@@ -243,10 +243,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // BRAM to store cells to forward.
     // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
     // but then need some way to idx by nbr host_idx. May need to make an interacing module.
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_SERVERS,
-        RingBuffer#(ReadReqType, ReadResType, WriteReqType)))
-            fwd_buffer <- replicateM(replicateM
-                (mkRingBuffer(valueof(FWD_BUFFER_SIZE), valueof(CELL_SIZE))));
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE,
+        RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
+            fwd_buffer <- replicateM(replicateM(replicateM
+                (mkRingBuffer(valueof(FWD_BUFFER_SIZE), valueof(CELL_SIZE)))));
     
     // State to determine next cell to send.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(BufType))
@@ -271,6 +271,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         // This is the 3nd cycle because set_current_timeslot and choose_buffer_to_send_from take 1 cycle each to execute.
         // TODO: Check whether bluespec "rules" execute in a single clock cycle? (BSV ref 6.2.2)
         // TODO: Why not just have signal FIFOs to fire these rules, instead of checking clock_within_timeslot ??
+        
+        // A rule to get local cells for each possible destination, when sending local traffic.
         for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
         begin
             // Get local cells for next local flow to send.
@@ -288,27 +290,37 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 let d <- cell_generator[i].host_cell_res[j].get;          
                 cell_to_send_fifo[i].enq(d);
             endrule
+        end
+        
+        // A rule to get FWD cells for each possible neighbor based on timeslot & phase, when sending FWD traffic.
+        for (Integer j = 0; j < valueof(NUM_OF_PHASES); j = j + 1)
+        begin
+            for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
+            begin
+                // Get cell to send from FWD buffer of current neighbor.
+                rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 2
+                                && buffer_to_send_from[i] == FWD
+                                && current_phase[i] == fromInteger(j) && current_timeslot[i] == fromInteger(k));              
+                    fwd_buffer[i][j][k].read_request.put(makeReadReq(READ));
+                endrule
 
-            // Get cell to send from FWD buffer of current neighbor.
-            rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 2
-                            && buffer_to_send_from[i] == FWD
-                            && current_neighbor[i] == fromInteger(j));              
-                fwd_buffer[i][j].read_request.put(makeReadReq(READ));
-            endrule
-
-            rule get_fwd_cell;
-                let d <- fwd_buffer[i][j].read_response.get;
-                cell_to_send_fifo[i].enq(d);
-            endrule
+                rule get_fwd_cell;
+                    let d <- fwd_buffer[i][j][k].read_response.get;
+                    cell_to_send_fifo[i].enq(d);
+                endrule
+            end
         end
 
         // Stat collection for buffer lengths
         rule get_max_buffer_len (running[i] == 1);
             Bit#(64) total_fwd_buf_len = 0;
-            for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
+            for (Integer j = 0; j < valueof(NUM_OF_PHASES); j = j + 1)
             begin
-                total_fwd_buf_len = total_fwd_buf_len + 
-                                    fwd_buffer[i][j].elements;    
+                for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
+                begin
+                    total_fwd_buf_len = total_fwd_buf_len + 
+                                        fwd_buffer[i][j][k].elements;    
+                end
             end
             if(total_fwd_buf_len > max_fwd_buffer_length_reg[i])
                 max_fwd_buffer_length_reg[i] <= total_fwd_buf_len;
@@ -542,9 +554,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 
 
                 ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
+                Phase next_hop_phase = 0;
+                Coordinate next_hop_timeslot = 0;
+
                 if (remaining_spraying_hops > 0)
                 begin
-                    Phase next_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
+                    next_hop_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
                     
                     // Select random hop if there is more than one hop possible.
                     // Bit#(3) spray_slot = 0;                    
@@ -553,18 +568,19 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     //     spray_slot <- rng_hop.get;
                     //     if(verbose) $display("Random hop selected: %d", spray_slot);
                     // end
-                    // next_hop = schedule_table[i][next_phase][spray_slot];
+                    // next_hop = schedule_table[i][next_hop_phase][spray_slot];
 
                     // Spray short.
                     Bit#(64) min_buffer_len = fromInteger(valueof(FWD_BUFFER_SIZE));
                     for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
                     begin
-                        ServerIndex nbr = schedule_table[i][next_phase][j];
-                        Bit#(64) len = fwd_buffer[i][nbr].elements;
+                        ServerIndex nbr = schedule_table[i][next_hop_phase][j];
+                        Bit#(64) len = fwd_buffer[i][next_hop_phase][j].elements;
                         if(min_buffer_len > len)
                         begin
                             min_buffer_len = len;
                             next_hop = nbr;
+                            next_hop_timeslot = fromInteger(j);
                         end
                     end
                     
@@ -573,7 +589,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
                     if (verbose)
                         $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
-                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, next_phase);
+                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, next_hop_phase);
                 end
                 else
                 begin
@@ -592,15 +608,20 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         if (next_hop == fromInteger(valueof(NUM_OF_SERVERS) + 1) &&
                             dst_coord != my_coord) 
                         begin
-                            next_hop = get_node_with_matching_coordinate(host_index[i], dst_coord, next_phase);
+                            next_hop_phase = fromInteger(next_phase);
+                            next_hop_timeslot = get_timeslot_with_matching_coordinate(host_index[i], dst_coord, next_phase);
+                            next_hop = schedule_table[i][next_hop_phase][next_hop_timeslot];
                             if (verbose)
-                                $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d", 
-                                        host_index[i], next_hop, next_phase, dst_ip);
+                            begin
+                                let next_hop_coord = get_coordinate(next_hop, next_phase);
+                                $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d, SANITY_CHECK=%d", 
+                                            host_index[i], next_hop, next_phase, dst_ip, next_hop_coord == dst_coord);
+                            end
                         end
                     end
                 end
-                if (!fwd_buffer[i][next_hop].full)
-                    fwd_buffer[i][next_hop].write_request.put
+                if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot].full)
+                    fwd_buffer[i][next_hop_phase][next_hop_timeslot].write_request.put
                         (makeWriteReq(d.sop, d.eop, d.payload));
                 else $display("[SCHED %d] FWD BUFFER FULL!!", host_index[i]);
             end
@@ -617,99 +638,102 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // For each src dst pair, rule for choosing cell to send between src-dst.
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-        for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
+        for (Integer j = 0; j < valueof(NUM_OF_PHASES); j = j + 1)
         begin
+            for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
+            begin
 
-            // Update flow eligibility for each flow via current neighbor,
-            // based on tokens parsed in receive path.
-            // rule update_tokens;
-            //     let d <- toGet(update_tokens_fifo[i][j]).get;
-            //     if(token1 updated)
-            //         pieo_queue_id = get_bucket_id(token1.dst_ip, token1.remaining_spraying_hops);
-            //         Flow f = pieo.dequeue(pieo_queue_id);
-            //         f.predicate = True;
-            //         pieo.enqueue(f);
-            //     if(token2 updated)
-            //         pieo_queue_id = get_bucket_id(token2.dst_ip, token2.remaining_spraying_hops);
-            //         Flow f = pieo.dequeue(pieo_queue_id);
-            //         f.predicate = True;
-            //         pieo.enqueue(f);
-            //     choose_buffer_to_send_from_fifo[i][j].enq(?);
-            // endrule
+                // Update flow eligibility for each flow via current neighbor,
+                // based on tokens parsed in receive path.
+                // rule update_tokens;
+                //     let d <- toGet(update_tokens_fifo[i][j]).get;
+                //     if(token1 updated)
+                //         pieo_queue_id = get_bucket_id(token1.dst_ip, token1.remaining_spraying_hops);
+                //         Flow f = pieo.dequeue(pieo_queue_id);
+                //         f.predicate = True;
+                //         pieo.enqueue(f);
+                //     if(token2 updated)
+                //         pieo_queue_id = get_bucket_id(token2.dst_ip, token2.remaining_spraying_hops);
+                //         Flow f = pieo.dequeue(pieo_queue_id);
+                //         f.predicate = True;
+                //         pieo.enqueue(f);
+                //     choose_buffer_to_send_from_fifo[i][j].enq(?);
+                // endrule
 
-            // To select local flow to send, we want to pick the next flow 
-            // in round robin that has cells to send.  
-            rule choose_buffer_to_send_from;
-                let d <- toGet(choose_buffer_to_send_from_fifo[i][j]).get;
+                // To select local flow to send, we want to pick the next flow 
+                // in round robin that has cells to send.  
+                rule choose_buffer_to_send_from;
+                    let dc <- toGet(choose_buffer_to_send_from_fifo[i][j][k]).get;
 
-                // First priority to remote cells to forward.
-                if (!fwd_buffer[i][j].empty)
-                begin
-                    buffer_to_send_from[i] <= FWD;
-                    if (verbose)
-                        $display("[SCHED %d] chose to send FWD cell.", host_index[i]);
-                end
-
-                // Then send any local flows that are ready, else send dummy flows. 
-                else
-                begin                    
-                    // ------- pick host flow to send -----------
-                    // Initialize dst with next_local_flow_idx[i]
-                    // TODO: No easy way to convert from ServerIndex to dst?
-                    // TODO: There has to be a better way to do this!! Ex: PIEO?
-                    Integer dst = 0;
-                    for(Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
-                        if (next_local_flow_idx[i] == fromInteger(k))
-                            dst = k;
-                    
-                    ServerIndex host_flow_chosen = fromInteger(valueof(NUM_OF_SERVERS)) + 1;
-                    for(Integer k = 0; k < valueof(NUM_OF_SERVERS); k = k + 1)
+                    // First priority to remote cells to forward.
+                    if (!fwd_buffer[i][j][k].empty)
                     begin
-                        if (!cell_generator[i].isEmpty(dst) && dst != i &&
-                            host_flow_chosen == fromInteger(valueof(NUM_OF_SERVERS) + 1))
-                            host_flow_chosen = fromInteger(dst);
-                        dst = (dst + 1) % valueof(NUM_OF_SERVERS);
-                    end
-                    // ========================================
-                    // If we were to use PIEO here:
-
-                    // // does NULL exist in BSV??
-                    // Flow f = local_flow_queue.dequeue();
-                    // if (f != NULL)
-                    // begin 
-                    //     f.rank = last rank  // might not need to set this
-                    //     // how to set eligibility??
-                    //     local_flow_queue.enqueue(f);
-                    // end
-                    // else dummy cell
-
-                    // ----------------------------------------
-
-                    // At least one host flow was ready to be sent, so will choose HOST.
-                    if (host_flow_chosen != fromInteger(valueof(NUM_OF_SERVERS) + 1))
-                    begin
+                        buffer_to_send_from[i] <= FWD;
                         if (verbose)
-                            $display("[SCHED %d] chose to send HOST cell.", host_index[i]);
-                        buffer_to_send_from[i] <= HOST;
-                        host_flow_to_send[i] <= host_flow_chosen;
-
-                        // Set host flow index for next turn. Check to not send to self.
-                        ServerIndex next_flow_idx = (host_flow_chosen + 1) % fromInteger(valueof(NUM_OF_SERVERS));
-                        if (next_flow_idx == fromInteger(i))
-                            next_local_flow_idx[i] <= (next_flow_idx + 1) % fromInteger(valueof(NUM_OF_SERVERS));
-                        else
-                            next_local_flow_idx[i] <= next_flow_idx;
+                            $display("[SCHED %d] chose to send FWD cell.", host_index[i]);
                     end
 
+                    // Then send any local flows that are ready, else send dummy flows. 
                     else
-                    begin
-                        if (verbose)
-                            $display("[SCHED %d] chose to send dummy cell.", host_index[i]);
-                        buffer_to_send_from[i] <= DUMMY;
-                    end
-                end
+                    begin                    
+                        // ------- pick host flow to send -----------
+                        // Initialize dst with next_local_flow_idx[i]
+                        // TODO: No easy way to convert from ServerIndex to Integer?
+                        // TODO: There has to be a better way to do this!! Ex: PIEO?
+                        Integer dst = 0;
+                        for(Integer d = 0; d < valueof(NUM_OF_SERVERS); d = d + 1)
+                            if (next_local_flow_idx[i] == fromInteger(d))
+                                dst = d;
+                        
+                        ServerIndex host_flow_chosen = fromInteger(valueof(NUM_OF_SERVERS)) + 1;
+                        for(Integer d = 0; d < valueof(NUM_OF_SERVERS); d = d + 1)
+                        begin
+                            if (!cell_generator[i].isEmpty(dst) && dst != i &&
+                                host_flow_chosen == fromInteger(valueof(NUM_OF_SERVERS) + 1))
+                                host_flow_chosen = fromInteger(dst);
+                            dst = (dst + 1) % valueof(NUM_OF_SERVERS);
+                        end
+                        // ========================================
+                        // If we were to use PIEO here:
 
-            endrule
+                        // // does NULL exist in BSV??
+                        // Flow f = local_flow_queue.dequeue();
+                        // if (f != NULL)
+                        // begin 
+                        //     f.rank = last rank  // might not need to set this
+                        //     // how to set eligibility??
+                        //     local_flow_queue.enqueue(f);
+                        // end
+                        // else dummy cell
+
+                        // ----------------------------------------
+
+                        // At least one host flow was ready to be sent, so will choose HOST.
+                        if (host_flow_chosen != fromInteger(valueof(NUM_OF_SERVERS) + 1))
+                        begin
+                            if (verbose)
+                                $display("[SCHED %d] chose to send HOST cell.", host_index[i]);
+                            buffer_to_send_from[i] <= HOST;
+                            host_flow_to_send[i] <= host_flow_chosen;
+
+                            // Set host flow index for next turn. Check to not send to self.
+                            ServerIndex next_flow_idx = (host_flow_chosen + 1) % fromInteger(valueof(NUM_OF_SERVERS));
+                            if (next_flow_idx == fromInteger(i))
+                                next_local_flow_idx[i] <= (next_flow_idx + 1) % fromInteger(valueof(NUM_OF_SERVERS));
+                            else
+                                next_local_flow_idx[i] <= next_flow_idx;
+                        end
+
+                        else
+                        begin
+                            if (verbose)
+                                $display("[SCHED %d] chose to send dummy cell.", host_index[i]);
+                            buffer_to_send_from[i] <= DUMMY;
+                        end
+                    end
+
+                endrule
+            end
         end
     end
 

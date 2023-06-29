@@ -115,21 +115,26 @@ endfunction
 
 // For direct hops, in each phase we need to find the adjacent node with the phase coordinate matching with the final destination.
 // This is the same as the previous function except that here we know the coodinate instead of the offset.
-// TODO: consolidate these 2 funcs?
-function ServerIndex get_node_with_matching_coordinate(ServerIndex node, Coordinate dst_coord, Integer phase);
+// TODO: consolidate these 2 funcs? 
+// This function returns the timeslot of the phase in which the node is connected to this matching node.
+function Coordinate get_timeslot_with_matching_coordinate(ServerIndex node, Coordinate dst_coord, Integer phase);
     Coordinate c = get_coordinate(node, phase);
 
-    Integer x = (valueof(NUM_OF_PHASES) - phase) - 1;  // h - phase_num - 1
-    // The offset node ID could be greater or less than this node. Handle sign for diff. 
+    // Integer x = (valueof(NUM_OF_PHASES) - phase) - 1;  // h - phase_num - 1
+    // The dst node ID could be greater or less than this node.
     if (dst_coord < c) 
     begin
-        ServerIndex diff = extend(c - dst_coord);
-        get_node_with_matching_coordinate = node - (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        // ServerIndex diff = extend(c - dst_coord);
+        // get_node_with_matching_coordinate = node - (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        Coordinate timeslot = (fromInteger(valueof(NODES_PER_PHASE)-1) - c) + dst_coord;
+        get_timeslot_with_matching_coordinate = timeslot;
     end
     else
     begin
-        ServerIndex diff = extend(dst_coord - c);
-        get_node_with_matching_coordinate = node + (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        // ServerIndex diff = extend(dst_coord - c);
+        // get_node_with_matching_coordinate = node + (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        Coordinate timeslot = (dst_coord - c - 1);
+        get_timeslot_with_matching_coordinate = timeslot;
     end
 
 endfunction
