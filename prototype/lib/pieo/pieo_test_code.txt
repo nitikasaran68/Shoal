@@ -1,0 +1,69 @@
+
+    Reg#(Bit#(72)) current_time <- mkReg(0);
+    rule clk;
+        current_time <= current_time + 1;
+    endrule
+
+    // Reg#(Bit#(1)) pieo_start_reg <- mkReg(0);
+    PIEOQueue pieo <- mkPIEOQueue;
+	Reg#(Bit#(4)) enq_turn <- mkReg(0);
+
+    rule enq_1(enq_turn == 1);
+        PIEOElement x;
+        x.id = 1;
+        x.rank = 0;
+        x.send_time = 1;
+        $display("REQ Enq 1 at time %d", current_time);
+        pieo.enqueue(x);
+    endrule
+
+    rule enq_2(enq_turn == 2);
+        PIEOElement x;
+        x.id = 2;
+        x.rank = 1;
+        x.send_time = 0;
+        $display("REQ Enq 2 at time %d", current_time);
+        pieo.enqueue(x);
+    endrule
+
+    rule enq_3(enq_turn == 3);
+        PIEOElement x;
+        x.id = 3;
+        x.rank = 1;
+        x.send_time = 0;
+        $display("REQ Enq 3 (%d) at time %d", enq_turn, current_time);
+        pieo.enqueue(x);
+    endrule
+
+    rule enq_result;
+        let sublist <- toGet(pieo.get_enqueue_sublist_id).get;
+        $display("RESULT Enq %d at time %d, sublist %d", enq_turn, current_time, sublist);
+        enq_turn <= enq_turn + 1;
+    endrule
+
+    rule deq (enq_turn == 4);
+        $display("DEQ request at time %d", current_time);
+        pieo.dequeue();
+    endrule
+
+    rule deq_result;
+        PIEOElement x <- toGet(pieo.get_dequeue_result).get;
+        $display("DEQ result at time %d: %d", current_time, x.id);
+        enq_turn <= enq_turn + 1;
+    endrule
+
+	Reg#(Bit#(1)) pieo_init_done <- mkReg(0);
+	Reg#(Bit#(1)) fire_pieo_test <- mkReg(0);
+    rule test_pieo_prep(pieo_init_done == 0);
+        pieo_init_done <= 1;
+        pieo.reset_queue();
+        $display("pieo reset method called");
+    endrule
+
+    rule test_pieo_run(fire_pieo_test == 1);
+        fire_pieo_test <= 0;
+        // let x <- toGet(pieo.reset_done).get;
+        $display("Starting Enq/Deq ops!");
+        // pieo_start_reg <= 1;
+        enq_turn <= 1;
+    endrule

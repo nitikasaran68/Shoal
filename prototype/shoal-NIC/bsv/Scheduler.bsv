@@ -243,14 +243,20 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // BRAM to store cells to forward.
     // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
     // but then need some way to idx by nbr host_idx. May need to make an interacing module.
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE,
-        RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
-            fwd_buffer <- replicateM(replicateM(replicateM
-                (mkRingBuffer(valueof(FWD_BUFFER_SIZE), valueof(CELL_SIZE)))));
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_TOKEN_BUCKETS,
+        RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
+            fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
+                (mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE)))))));
+    
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
+        PIEOQueue))) fwd_pieo <- replicateM(replicateM(mkPIEOQueue));
     
     // State to determine next cell to send.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(BufType))
         buffer_to_send_from <- replicateM(mkReg(HOST));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(4)))
+        tx_fwd_bucket_idx <- replicateM(mkReg(0));
+        
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex))
         host_flow_to_send <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, FIFO#(ReadResType))
@@ -263,12 +269,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // Tx rules for each port.
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
-
-
         // Tx rules for each destination node. At most one req_*_cell rule gets fired per timeslot,
         // depending on buffer_to_send_from type. These rules only get fired on the third clock cycle
         // of each timeslot. It is obvious that these should only fire on a single clock cycle of the timeslot.
-        // This is the 3nd cycle because set_current_timeslot and choose_buffer_to_send_from take 1 cycle each to execute.
+        // This is the 7th cycle because - 1 cycle for set_current_timeslot, 1 for choose_buffer_to_send_from
+        // 3 for dequeue to execute, 1 for choose_buffer_to_send_from_2
         // TODO: Check whether bluespec "rules" execute in a single clock cycle? (BSV ref 6.2.2)
         // TODO: Why not just have signal FIFOs to fire these rules, instead of checking clock_within_timeslot ??
         
@@ -276,7 +281,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         for (Integer j = 0; j < valueof(NUM_OF_SERVERS); j = j + 1)
         begin
             // Get local cells for next local flow to send.
-            rule request_local_cell (running[i] == 1 && clock_within_timeslot[i] == 2
+            rule request_local_cell (running[i] == 1 && clock_within_timeslot[i] == 6
                             && buffer_to_send_from[i] == HOST
                             && host_flow_to_send[i] == fromInteger(j));        
                 cell_generator[i].host_cell_req[j].put(?);
@@ -297,17 +302,22 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         begin
             for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
             begin
-                // Get cell to send from FWD buffer of current neighbor.
-                rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 2
+                // Get cell to send from FWD buffer of current neighbor
+                // and the bucket selected via PIEO.
+                rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 6
                                 && buffer_to_send_from[i] == FWD
                                 && current_phase[i] == fromInteger(j) && current_timeslot[i] == fromInteger(k));              
-                    fwd_buffer[i][j][k].read_request.put(makeReadReq(READ));
+                    fwd_buffer[i][j][k][tx_fwd_bucket_idx[i]].read_request.put(makeReadReq(READ));
                 endrule
 
-                rule get_fwd_cell;
-                    let d <- fwd_buffer[i][j][k].read_response.get;
-                    cell_to_send_fifo[i].enq(d);
-                endrule
+                // For each neighbor & bucket, if a cell is read, prepare to send it.
+                for(Integer l = 0; l < valueof(NUM_TOKEN_BUCKETS); l = l + 1)
+                begin
+                    rule get_fwd_cell;
+                        let d <- fwd_buffer[i][j][k][l].read_response.get;
+                        cell_to_send_fifo[i].enq(d);
+                    endrule
+                end
             end
         end
 
@@ -326,7 +336,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 max_fwd_buffer_length_reg[i] <= total_fwd_buf_len;
         endrule
 
-        rule req_dummy_cell (running[i] == 1 && clock_within_timeslot[i] == 2
+        rule req_dummy_cell (running[i] == 1 && clock_within_timeslot[i] == 6
                         && buffer_to_send_from[i] == DUMMY);
             if (verbose)
                 $display("[SCHED %d] Requesting dummy cell", host_index[i]);
@@ -584,12 +594,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         end
                     end
                     
-                    remaining_spraying_hops = remaining_spraying_hops - 1;
+                    // remaining_spraying_hops = remaining_spraying_hops - 1;
                     // TODO: This shouldn't be set here, in Tx.
-                    d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
+                    d.payload[458:456] = remaining_spraying_hops - 1;           // TODO: hard-coded index!
                     if (verbose)
                         $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
-                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, next_hop_phase);
+                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops-1, next_hop_phase);
                 end
                 else
                 begin
@@ -620,10 +630,50 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         end
                     end
                 end
-                if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot].full)
-                    fwd_buffer[i][next_hop_phase][next_hop_timeslot].write_request.put
+                
+                // Get bucket_idx for this packet.
+                // Here we're using the # of spray hops when received.
+                // This is the same indexing we'll use to send tokens
+                // to the src_mac. BUT I think this will have to be changed
+                // to the spray hops value we will fwd, because that is what
+                // we count in received tokens.
+                // TODO: Change to index by outgoing (N,h), and store src_mac,
+                // and recv bucket with the fwd cell or the pieo item!
+                Bit#(64) bucket_idx;
+                if (dst_ip == next_hop)
+                    bucket_idx =  fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
+                else
+                begin
+                    Token bucket;
+                    bucket.dst_ip = dst_ip;
+                    bucket.remaining_spraying_hops = remaining_spraying_hops;
+                    bucket_idx = truncate(get_fwd_bucket_idx(bucket));
+                end
+
+                if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].full)
+                begin
+                    fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].write_request.put
                         (makeWriteReq(d.sop, d.eop, d.payload));
-                else $display("[SCHED %d] FWD BUFFER FULL!!", host_index[i]);
+                
+                    // Enqueue this flow (bucket) in PIEO, and mark as eligible.
+                    // TODO: This is temporary. What we need is to enqueue
+                    // all buckets initially in PIEO and change eligibility
+                    // as we receive/use tokens, and dequeue / re-enqueue.
+                    // Another possibility is to keep this design, where each idv packet is enqueued
+                    // into PIEO, and we just pass current_time with eligibility info for each bucket.
+                    // This way we need not call dequeue_f to update eligibility for buckets! And we
+                    // also don't need to re-enqueue. So things stay the same as is! This would require 
+                    // current_time to not be hard-wired to 1 in PIEO bsv code.
+                    PIEOElement flow;
+                    flow.id = bucket_idx;
+                    flow.rank = 0;
+                    flow.send_time = 0;
+                    fwd_pieo[i][next_hop_phase][next_hop_timeslot].enqueue(flow);
+                    if (verbose && host_index[i] == 0)
+                        $display("[SCHED %d] Enqueued bucket idx %d in PIEO, fwd buffer", host_index[i], bucket_idx);
+                end
+                else $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d!!", host_index[i], next_hop, bucket_idx);
+                
             end
 
         endrule
@@ -664,13 +714,23 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // in round robin that has cells to send.  
                 rule choose_buffer_to_send_from;
                     let dc <- toGet(choose_buffer_to_send_from_fifo[i][j][k]).get;
-
+                    if (verbose && host_index[i] == 0)
+                        $display("[SCHED 0] Sent deq request at time=%d", current_time);
                     // First priority to remote cells to forward.
-                    if (!fwd_buffer[i][j][k].empty)
+                    fwd_pieo[i][j][k].dequeue();
+                endrule
+
+                rule choose_buffer_to_send_from_2;
+                    PIEOElement x <- toGet(pieo.get_dequeue_result).get;
+                    if (verbose && host_index[i] == 0)
+                        $display("[SCHED 0] DEQ result at time %d: %d", current_time, x.id);
+
+                    if (x.id != PIEO_NULL_ID)
                     begin
                         buffer_to_send_from[i] <= FWD;
-                        if (verbose)
-                            $display("[SCHED %d] chose to send FWD cell.", host_index[i]);
+                        tx_fwd_bucket_idx[i] <= x.id;
+                        if (verbose && host_index[i] == 0)
+                            $display("[SCHED %d] chose to send FWD cell from bucket %d.", host_index[i], tx_fwd_bucket_idx[i]);
                     end
 
                     // Then send any local flows that are ready, else send dummy flows. 

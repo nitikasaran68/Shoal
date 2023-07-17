@@ -7,8 +7,8 @@ import GetPut::*;
 import DefaultValue::*;
 
 // NOTE: If you change these, Header might change as well.
-typedef 8 NUM_OF_SERVERS;       // N
-typedef 3 NUM_OF_PHASES;        // h
+typedef 4 NUM_OF_SERVERS;       // N
+typedef 2 NUM_OF_PHASES;        // h
 typedef 2 NODES_PER_PHASE;       // (N ** 1/h)
 typedef 1 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
 // NOTE: Add a margin of 1 bit to Coordinate and Phase, because
@@ -17,6 +17,14 @@ typedef Bit#(3) Coordinate;     // >= 1 + ceil(log_2(NODES_PER_PHASE)) bits to s
 typedef Bit#(3) Phase;          // >= 1 + ceil(log_2(NUM_OF_PHASES)) bits to store phase.
 
 typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
+
+
+// Each (dst, spray_hops) bucket can have one pkt per node.
+typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
+typedef 8 FINAL_DST_BUCKET_IDX;             // NUM_TOKEN_BUCKETS - 1
+typedef 2 CELLS_PER_BUCKET_HOST;
+typedef 1 CELLS_PER_BUCKET_FWD;
+// typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
 
 // But this doesn't have all the fields mentioned in Shoal paper?!
 // NOTE: If you change header format, also change offset values used in Scheduler.
@@ -141,9 +149,22 @@ endfunction
 
 typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
-// For NIC
-// Each (dst, spray_hops) bucket can have one pkt per node. Total buffer size = h x N
-typedef NUM_OF_SERVERS FWD_BUFFER_SIZE;
+
+// Get index in fwd buffer from the bucket containing the 
+// final destination and the number of remaining hops.
+// This function converts the 2D index (bucket) to a scalar
+// index by treating the destination as rows and number of
+// spray hops as columns.
+// TODO: For each node x, the buckets with final destination x
+// will never be occupied, so we can optimize storage accordingly.
+function Bit#(64) get_fwd_bucket_idx(Token tkn);
+    let d = tkn.dst_ip;     // dest idx: 0 to N-1
+    let h = tkn.remaining_spraying_hops;
+    // For each dst, spray hops can be from 0 to H-1. 
+    // H remaining spray hops implies a local flow.
+    Bit#(64) idx = extend(d) * fromInteger(valueof(NUM_OF_PHASES));
+    get_fwd_bucket_idx = idx + extend(h);
+endfunction
 
 // Module to pick a spraying hop at random, using the LFSR modules.
 // Adapted from example on page 308 of BSV ref guide.

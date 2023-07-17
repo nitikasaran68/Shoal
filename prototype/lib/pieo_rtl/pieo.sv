@@ -2,7 +2,7 @@
 `timescale 1 ns / 1 ps
 // synopsys translate_on
 
-//`define SIMULATION
+/*`define SIMULATION_DEBUG */
 
 import pieo_datatypes::*;
 
@@ -52,7 +52,7 @@ module pieo
     output logic [$clog2(NUM_OF_SUBLIST):0] flow_id_moved_to_sublist_out
 );
 
-`ifdef SIMULATION
+`ifdef SIMULATION_DEBUG
     integer f;
 `endif
 
@@ -256,7 +256,7 @@ module pieo
     ) pri_encoder_BB(bit_vector_BB, encode_BB, valid_BB);
 
     typedef enum {
-`ifdef SIMULATION
+`ifdef SIMULATION_DEBUG
         PRINT,
         CONT_PRINTING,
 `endif
@@ -294,7 +294,7 @@ module pieo
 
     logic [TIME_LOG-1:0] pred_val_deq;
 
-`ifdef SIMULATION
+`ifdef SIMULATION_DEBUG
     reg [63:0] cntr;
     reg [63:0] insertion_cnt;
     reg [63:0] deletion_cnt;
@@ -334,7 +334,7 @@ module pieo
         bit_vector_BB = '0;
         idx_enq = 0; //temp vals
         pred_val_deq = '0; //temp vals
-
+        /* $display("[PIEO] Curr State: %d (IDLE is %d)", curr_state, IDLE); */
         case(curr_state)
             RESET: begin
                 for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
@@ -391,6 +391,7 @@ module pieo
 
             ENQ_FETCH_SUBLIST_FROM_MEM: begin
                 if (valid_reg) begin
+                    /* $display("enq valid! Sublist id %d", s.id); */
                     for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
                         enable_A[i] = 1;
                         write_A[i] = 0;
@@ -445,9 +446,12 @@ module pieo
             end
 
             ENQ_WRITE_BACK_TO_MEM: begin
+                /*$display("Enq case: %d", enqueue_case_reg);*/
                 case (enqueue_case_reg)
                     0: begin
                         if (valid_A_reg & valid_AA_reg) begin
+                            /*$display("Enq writeback valid; pos %d", encode_A_reg);*/
+
                             enq_valid_out = 1;
                             f_enqueued_in_sublist_out = s_reg.id;
                             flow_id_moved_out = '1;
@@ -475,11 +479,11 @@ module pieo
                                     wr_data_AA[i] = rd_data_AA_reg[i-1];
                                 end
                             end
-`ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
-`else
+                            `else
                             nxt_state = IDLE;
-`endif
+                            `endif
                         end
                     end
 
@@ -510,11 +514,11 @@ module pieo
                                     wr_data_BB[i] = rd_data_BB_reg[i-1];
                                 end
                             end
-`ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
-`else
+                            `else
                             nxt_state = IDLE;
-`endif
+                            `endif
                         end
                     end
 
@@ -585,11 +589,11 @@ module pieo
                                     wr_data_BB[i] = rd_data_BB_reg[i-1];
                                 end
                             end
-`ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
-`else
+                            `else
                             nxt_state = IDLE;
-`endif
+                            `endif
                         end
                     end
 
@@ -617,29 +621,31 @@ module pieo
                             address_BB[i] = s_neigh_reg.id;
                             wr_data_BB[i] = rd_data_BB_reg[i];
                         end
-`ifdef SIMULATION
+                        `ifdef SIMULATION_DEBUG
                         nxt_state = PRINT;
-`else
+                        `else
                         nxt_state = IDLE;
-`endif
+                        `endif
                     end
                 endcase
             end
 
             DEQ_FETCH_SUBLIST_FROM_MEM: begin
                 if (~valid_reg) begin
-                    deq_valid_out = 1;
+                    /*$display("Deq: nothing eligible!");*/
                     deq_element_out.id = '1;
                     deq_element_out.rank = '1;
                     deq_element_out.send_time = '1;
                     flow_id_moved_out = '1;
                     flow_id_moved_to_sublist_out = '1;
-`ifdef SIMULATION
+                    deq_valid_out = 1;
+                    `ifdef SIMULATION_DEBUG
                     nxt_state = PRINT;
-`else
+                    `else
                     nxt_state = IDLE;
-`endif
+                    `endif
                 end else if (valid_reg) begin
+                    /*$display("Deq: found eligible!");*/
                     for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
                         enable_A[i] = 1;
                         write_A[i] = 0;
@@ -695,11 +701,11 @@ module pieo
                     deq_element_out.send_time = '1;
                     flow_id_moved_out = '1;
                     flow_id_moved_to_sublist_out = '1;
-`ifdef SIMULATION
+                    `ifdef SIMULATION_DEBUG
                     nxt_state = PRINT;
-`else
+                    `else
                     nxt_state = IDLE;
-`endif
+                    `endif
                 end else begin
                     if (s_neigh_type_reg == NONE) begin
                         if (valid_A_reg) begin
@@ -735,11 +741,11 @@ module pieo
                                     end
                                 end
                             end
-`ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
-`else
+                            `else
                             nxt_state = IDLE;
-`endif
+                            `endif
                         end
                     end else begin
                         if (valid_A_reg & (valid_AA_reg||idx_enq_reg) & valid_BB_reg) begin
@@ -833,16 +839,16 @@ module pieo
                                     end
                                 end
                             end
-`ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
-`else
+                            `else
                             nxt_state = IDLE;
-`endif
+                            `endif
                         end
                     end
                 end
             end
-`ifdef SIMULATION
+            `ifdef SIMULATION_DEBUG
             PRINT: begin
                 for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
                     enable_A[i] = 1;
@@ -870,12 +876,13 @@ module pieo
                     end
                 end
             end
-`endif
+            `endif
         endcase
     end
 
     always @(posedge clk) begin
         if (rst) begin
+            /*$display("[PIEO] rst set");*/
             curr_state <= RESET;
             free_list_head_reg <= 0;
             //initialize pointer array
@@ -894,18 +901,18 @@ module pieo
             curr_time_in_reg <= 0;
             dequeue_f_in_reg <= 0;
             flow_id_in_reg <= 0;
-`ifdef SIMULATION
+            `ifdef SIMULATION_DEBUG
             insertion_cnt <= 0;
             deletion_cnt <= 0;
-`endif
+            `endif
         end else begin
             curr_state <= nxt_state;
 
             if (curr_state == RESET) begin
                 curr_address <= curr_address + 1;
-`ifdef SIMULATION
+                `ifdef SIMULATION_DEBUG
                 $display("Resetting sublist = %0d", curr_address);
-`endif
+                `endif
             end else if (curr_state == IDLE) begin
                 if (start) begin
                     f_in_reg <= f_in;
@@ -920,7 +927,7 @@ module pieo
                     end else if (dequeue_in || dequeue_f_in) begin
                         s_idx_reg <= encode;
                     end
-`ifdef SIMULATION
+                    `ifdef SIMULATION_DEBUG
                     curr_address <= 0;
                     cntr <= 0;
                     if (enqueue_f_in) begin
@@ -936,7 +943,7 @@ module pieo
                             deletion_cnt, flow_id_in, sublist_id_in);
                         deletion_cnt <= deletion_cnt + 1;
                     end
-`endif
+                    `endif
                 end
             end else if (curr_state == ENQ_FETCH_SUBLIST_FROM_MEM) begin
                 if (valid_reg) begin
@@ -998,6 +1005,7 @@ module pieo
             end else if (curr_state == ENQ_WRITE_BACK_TO_MEM) begin
                 if (enqueue_case_reg == 0) begin
                     if (valid_A_reg & valid_AA_reg) begin
+                        /*$display("[PIEO] s_idx_reg = %d", s_idx_reg);*/
                         for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
                             if (i == s_idx_reg) begin
                                 pointer_array[i].id <= s_reg.id;
@@ -1063,10 +1071,10 @@ module pieo
                 end
             end else if (curr_state == DEQ_FETCH_SUBLIST_FROM_MEM) begin
                 if (~valid_reg) begin
-`ifdef SIMULATION
+                `ifdef SIMULATION_DEBUG
                     $fwrite(f,"DEQ ELEMENT -- %0d %0d %0d\n",
                         0, (2**RANK_LOG)-1, (2**TIME_LOG)-1);
-`endif
+                `endif
                 end
                 else if (valid_reg) begin
                     s_reg <= s;
@@ -1133,19 +1141,19 @@ module pieo
                 end
             end else if (curr_state == DEQ_WRITE_BACK_TO_MEM) begin
                 if (~valid_A_reg) begin
-`ifdef SIMULATION
+                `ifdef SIMULATION_DEBUG
                     $fwrite(f,"DEQ ELEMENT -- %0d %0d %0d\n",
                         0, (2**RANK_LOG)-1, (2**TIME_LOG)-1);
-`endif
+                `endif
                 end else begin
                     if (s_neigh_type_reg == NONE) begin
                         if (valid_A_reg) begin
-    `ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             $fwrite(f,"DEQ ELEMENT -- %0d %0d %0d\n",
                                 element_dequeued_reg.id,
                                 element_dequeued_reg.rank,
                                 element_dequeued_reg.send_time);
-    `endif
+                            `endif
                             if (s_reg.num != 1) begin
                                 for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
                                     if (i == s_idx_reg) begin
@@ -1164,12 +1172,12 @@ module pieo
                         end
                     end else begin
                         if (valid_A_reg & (valid_AA_reg||idx_enq_reg) & valid_BB_reg) begin
-    `ifdef SIMULATION
+                            `ifdef SIMULATION_DEBUG
                             $fwrite(f,"DEQ ELEMENT -- %0d %0d %0d\n",
                                 element_dequeued_reg.id,
                                 element_dequeued_reg.rank,
                                 element_dequeued_reg.send_time);
-    `endif
+                            `endif
                             for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
                                 if (i == s_idx_reg) begin
                                     pointer_array[i].id <= s_reg.id;
@@ -1221,7 +1229,7 @@ module pieo
                         end
                     end
                 end
-`ifdef SIMULATION
+            `ifdef SIMULATION_DEBUG
             end else if (curr_state == PRINT) begin
                 cntr <= cntr + 1;
                 $fwrite(f, "%0d SUBLIST - %0d %0d %0d %0d %0d", insertion_cnt,
@@ -1244,16 +1252,16 @@ module pieo
                     pointer_array[cntr].full,
                     pointer_array[cntr].num);
                 $fwrite(f,"\n");
-`endif
+            `endif
             end
         end
     end
 
-`ifdef SIMULATION
+    `ifdef SIMULATION_DEBUG
     initial begin
         f = $fopen("out", "w");
     end
-`endif
+    `endif
 endmodule
 
 /*

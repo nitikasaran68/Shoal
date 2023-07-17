@@ -3,13 +3,13 @@
 
 package pieo_datatypes;
 
-parameter LIST_SIZE = (2**6);
+parameter LIST_SIZE = (2**4);
 parameter ID_LOG = $clog2(LIST_SIZE);
-parameter RANK_LOG = 16;
+parameter RANK_LOG = 4;
 parameter TIME_LOG = 16;
 
-parameter NUM_OF_ELEMENTS_PER_SUBLIST = (2**3); //sqrt(LIST_SIZE)
-parameter NUM_OF_SUBLIST = (2**4); //2*NUM_OF_ELEMENTS_PER_SUBLIST
+parameter NUM_OF_ELEMENTS_PER_SUBLIST = (2**2); //sqrt(LIST_SIZE)
+parameter NUM_OF_SUBLIST = (2**3); //2*NUM_OF_ELEMENTS_PER_SUBLIST
 
 typedef struct packed
 {

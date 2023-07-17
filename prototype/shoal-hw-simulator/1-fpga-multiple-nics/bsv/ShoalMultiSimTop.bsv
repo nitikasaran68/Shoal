@@ -43,12 +43,13 @@ interface ShoalMultiSimTopIndication;
         (Bit#(64) sop, Bit#(64) eop, Bit#(64) blocks, Bit#(64) cells);
     method Action display_rx_port_3_stats
         (Bit#(64) sop, Bit#(64) eop, Bit#(64) blocks, Bit#(64) cells);
-`ifdef CW_PHY_SIM
+    
+    `ifdef CW_PHY_SIM
     method Action display_latency_port_0_stats(Bit#(64) t);
     method Action display_latency_port_1_stats(Bit#(64) t);
     method Action display_latency_port_2_stats(Bit#(64) t);
     method Action display_latency_port_3_stats(Bit#(64) t);
-`endif
+    `endif
 
 	method Action display_received_wrong_dst_pkt_count(Bit#(16) idx, Bit#(64) count);
     method Action display_latency(Bit#(16) idx, Bit#(64) count);
