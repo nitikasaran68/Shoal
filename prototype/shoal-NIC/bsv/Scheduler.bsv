@@ -146,7 +146,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         num_of_wrong_dst_pkt_received_reg <- replicateM(mkReg(0));
 	Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(72)))
         latency_reg <- replicateM(mkReg(0));
-    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
         max_fwd_buffer_length_reg <- replicateM(mkReg(0));
     // Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64))) host_pkt_transmitted_reg
     //     <- replicateM(mkReg(0));
@@ -247,10 +247,32 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
             fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
                 (mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE)))))));
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
+        total_fwd_buffer_len <- replicateM(mkReg(0));
     
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
-        PIEOQueue))) fwd_pieo <- replicateM(replicateM(mkPIEOQueue));
+        PIEOQueue))) fwd_pieo <- replicateM(replicateM(replicateM(mkPIEOQueue)));
     
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
+        Reg#(Bit#(1))))) pieo_init_done <- replicateM(replicateM(replicateM(mkReg(0))));
+    
+    // Initialize PIEO by resetting queues
+    // TODO: Need some way to make sure this reset is over before we syart scheduler ops.
+    for(Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
+    begin
+        for (Integer j = 0; j < valueof(NUM_OF_PHASES); j = j + 1)
+            begin
+            for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
+                begin
+                rule test_pieo_prep(pieo_init_done[i][j][k] == 0);
+                    pieo_init_done[i][j][k] <= 1;
+                    fwd_pieo[i][j][k].reset_queue();
+                    $display("pieo reset method called");
+                endrule
+            end
+        end
+    end
+
     // State to determine next cell to send.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(BufType))
         buffer_to_send_from <- replicateM(mkReg(HOST));
@@ -315,6 +337,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 begin
                     rule get_fwd_cell;
                         let d <- fwd_buffer[i][j][k][l].read_response.get;
+                        total_fwd_buffer_len[i] <= total_fwd_buffer_len[i] - 1;
                         cell_to_send_fifo[i].enq(d);
                     endrule
                 end
@@ -323,17 +346,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
         // Stat collection for buffer lengths
         rule get_max_buffer_len (running[i] == 1);
-            Bit#(64) total_fwd_buf_len = 0;
-            for (Integer j = 0; j < valueof(NUM_OF_PHASES); j = j + 1)
-            begin
-                for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
-                begin
-                    total_fwd_buf_len = total_fwd_buf_len + 
-                                        fwd_buffer[i][j][k].elements;    
-                end
-            end
-            if(total_fwd_buf_len > max_fwd_buffer_length_reg[i])
-                max_fwd_buffer_length_reg[i] <= total_fwd_buf_len;
+            if(total_fwd_buffer_len[i] > max_fwd_buffer_length_reg[i])
+                max_fwd_buffer_length_reg[i] <= extend(total_fwd_buffer_len[i]);
         endrule
 
         rule req_dummy_cell (running[i] == 1 && clock_within_timeslot[i] == 6
@@ -350,7 +364,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             cell_to_send_fifo[i].enq(d);
         endrule
 
-        // Rule to actually send by forwarding cell to lower layers. Only fires once we enq to cell_to_send_fifo.
+        // Rule to actually send by forwarding cell to lower layers. 
+        // Only fires once we enq to cell_to_send_fifo. 
+        // NOTE: It takes one cycle to transmit each BUS_WIDTH (512) block. 
+        // So, to make best use of our timeslot, we should use cell_size close
+        // to # of transmit cyles (timeslot - processing overhead)
         rule send_cell (running[i] == 1);
             let d <- toGet(cell_to_send_fifo[i]).get;
 
@@ -518,7 +536,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     begin
                         corrupted_cell = 1;
                         if(verbose)
-                            $display("[SCHED %d] GOT CORRUPTED PKT payload=%x   c=%x", host_index[i], d.payload[511:64], c[511:64]);
+                            $display("[SCHED %d] GOT CORRUPTED PKT at time=%d", host_index[i], current_time);
                         // num_of_corrupted_pkt_received_reg[i]
                         //     <= num_of_corrupted_pkt_received_reg[i] + 1;
                     end
@@ -581,11 +599,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // next_hop = schedule_table[i][next_hop_phase][spray_slot];
 
                     // Spray short.
-                    Bit#(64) min_buffer_len = fromInteger(valueof(FWD_BUFFER_SIZE));
+                    Bit#(64) min_buffer_len = fromInteger(valueof(NUM_TOKEN_BUCKETS));
+                    Token bucket;
+                    bucket.dst_ip = dst_ip;
+                    bucket.remaining_spraying_hops = remaining_spraying_hops;
+                    Bit#(64) bkt_idx = get_fwd_bucket_idx(bucket);
                     for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
                     begin
                         ServerIndex nbr = schedule_table[i][next_hop_phase][j];
-                        Bit#(64) len = fwd_buffer[i][next_hop_phase][j].elements;
+                        Bit#(64) len = fwd_buffer[i][next_hop_phase][j][bkt_idx].elements;
                         if(min_buffer_len > len)
                         begin
                             min_buffer_len = len;
@@ -598,8 +620,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // TODO: This shouldn't be set here, in Tx.
                     d.payload[458:456] = remaining_spraying_hops - 1;           // TODO: hard-coded index!
                     if (verbose)
-                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d on phase %d", 
-                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops-1, next_hop_phase);
+                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d, dst=%d on phase %d", 
+                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops-1, dst_ip, next_hop_phase);
                 end
                 else
                 begin
@@ -647,13 +669,14 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     Token bucket;
                     bucket.dst_ip = dst_ip;
                     bucket.remaining_spraying_hops = remaining_spraying_hops;
-                    bucket_idx = truncate(get_fwd_bucket_idx(bucket));
+                    bucket_idx = get_fwd_bucket_idx(bucket);
                 end
 
                 if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].full)
                 begin
                     fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].write_request.put
                         (makeWriteReq(d.sop, d.eop, d.payload));
+                    total_fwd_buffer_len[i] <= total_fwd_buffer_len[i] + 1;
                 
                     // Enqueue this flow (bucket) in PIEO, and mark as eligible.
                     // TODO: This is temporary. What we need is to enqueue
@@ -665,12 +688,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // also don't need to re-enqueue. So things stay the same as is! This would require 
                     // current_time to not be hard-wired to 1 in PIEO bsv code.
                     PIEOElement flow;
-                    flow.id = bucket_idx;
+                    flow.id = truncate(bucket_idx);
                     flow.rank = 0;
                     flow.send_time = 0;
+                    if (verbose)
+                        $display("[SCHED %d] Enqueuing bucket idx %d in PIEO, fwd buffer", host_index[i], bucket_idx);
                     fwd_pieo[i][next_hop_phase][next_hop_timeslot].enqueue(flow);
-                    if (verbose && host_index[i] == 0)
-                        $display("[SCHED %d] Enqueued bucket idx %d in PIEO, fwd buffer", host_index[i], bucket_idx);
                 end
                 else $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d!!", host_index[i], next_hop, bucket_idx);
                 
@@ -714,23 +737,23 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // in round robin that has cells to send.  
                 rule choose_buffer_to_send_from;
                     let dc <- toGet(choose_buffer_to_send_from_fifo[i][j][k]).get;
-                    if (verbose && host_index[i] == 0)
-                        $display("[SCHED 0] Sent deq request at time=%d", current_time);
+                    if (verbose)
+                        $display("[SCHED %d] Sent deq request at time=%d", host_index[i], current_time);
                     // First priority to remote cells to forward.
                     fwd_pieo[i][j][k].dequeue();
                 endrule
 
                 rule choose_buffer_to_send_from_2;
-                    PIEOElement x <- toGet(pieo.get_dequeue_result).get;
-                    if (verbose && host_index[i] == 0)
-                        $display("[SCHED 0] DEQ result at time %d: %d", current_time, x.id);
+                    PIEOElement x <- toGet(fwd_pieo[i][j][k].get_dequeue_result).get;
+                    if (verbose)
+                        $display("[SCHED %d] DEQ result at time %d: %d", host_index[i], current_time, x.id);
 
-                    if (x.id != PIEO_NULL_ID)
+                    if (x.id != fromInteger(valueof(PIEO_NULL_ID)))
                     begin
                         buffer_to_send_from[i] <= FWD;
                         tx_fwd_bucket_idx[i] <= x.id;
-                        if (verbose && host_index[i] == 0)
-                            $display("[SCHED %d] chose to send FWD cell from bucket %d.", host_index[i], tx_fwd_bucket_idx[i]);
+                        if (verbose)
+                            $display("[SCHED %d] chose to send FWD cell from bucket %d.", host_index[i], x.id);
                     end
 
                     // Then send any local flows that are ready, else send dummy flows. 
@@ -772,7 +795,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         if (host_flow_chosen != fromInteger(valueof(NUM_OF_SERVERS) + 1))
                         begin
                             if (verbose)
-                                $display("[SCHED %d] chose to send HOST cell.", host_index[i]);
+                                $display("[SCHED %d] chose to send HOST cell at time=%d.", host_index[i], current_time);
                             buffer_to_send_from[i] <= HOST;
                             host_flow_to_send[i] <= host_flow_chosen;
 
@@ -889,7 +912,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
     method Action max_fwd_buffer_length();
         for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-            buffer_length_fifo[i].enq(max_fwd_buffer_length_reg[i]);
+            buffer_length_fifo[i].enq(extend(max_fwd_buffer_length_reg[i]));
     endmethod
 
 

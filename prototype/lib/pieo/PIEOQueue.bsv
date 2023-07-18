@@ -5,7 +5,7 @@ import GetPut::*;
 
 // NOTE: Set these according to pieo_datatypes.sv !!
 
-// TODO: PIEO_LIST_SIZE should be the same as FWD_BUFFER_SIZE
+// TODO: PIEO_LIST_SIZE should be the same as max num token buckets * buckt size
 
 typedef 16 PIEO_LIST_SIZE;      // Max number of elements in PIEO queue.
 typedef 4 ID_LOG;               // clog2(PIEO_LIST_SIZE) bits to store max flow ID
