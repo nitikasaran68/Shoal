@@ -20,8 +20,16 @@ typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
 
 // Each (dst, spray_hops) bucket can have one pkt per node.
+// In the fwd_buffer, we store cells by their send bucket -
+// that is, the number of spray hops is the remaining number
+// once we forward the packet. Since, we will never receive a
+// cell with remaining spray hops > h-1, our fwd buffer will have
+// cells with spray hops in [0, h-2].
+// NOTE: If this changes, we also need to change PIEO datatypes.
 typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
-typedef 8 FINAL_DST_BUCKET_IDX;             // NUM_TOKEN_BUCKETS - 1
+typedef 5 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
+typedef 0 FINAL_DST_BUCKET_IDX;              // 0 
+typedef 4 BUCKET_IDX_BITS;
 typedef 2 CELLS_PER_BUCKET_HOST;
 typedef 1 CELLS_PER_BUCKET_FWD;
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
@@ -153,8 +161,9 @@ typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in Rin
 // Get index in fwd buffer from the bucket containing the 
 // final destination and the number of remaining hops.
 // This function converts the 2D index (bucket) to a scalar
-// index by treating the destination as rows and number of
-// spray hops as columns.
+// index by treating the number of spray hops as rows and
+// destinations as columns. We add a 1 to this idx because
+// we mark the final dest bucket as idx 0.
 // TODO: For each node x, the buckets with final destination x
 // will never be occupied, so we can optimize storage accordingly.
 function Bit#(64) get_fwd_bucket_idx(Token tkn);
@@ -162,8 +171,17 @@ function Bit#(64) get_fwd_bucket_idx(Token tkn);
     let h = tkn.remaining_spraying_hops;
     // For each dst, spray hops can be from 0 to H-1. 
     // H remaining spray hops implies a local flow.
-    Bit#(64) idx = extend(d) * fromInteger(valueof(NUM_OF_PHASES));
-    get_fwd_bucket_idx = idx + extend(h);
+    Bit#(64) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
+    get_fwd_bucket_idx = idx + extend(d) + 1;
+endfunction
+
+function Token get_token_from_bucket_idx(Bit#(BUCKET_IDX_BITS) bucket_idx);
+    Token tkn;
+    tkn.dst_ip = extend((bucket_idx - 1) % fromInteger(valueof(NUM_OF_SERVERS)));
+    Bit#(BUCKET_IDX_BITS) spray_hops = (bucket_idx - 1 - truncate(tkn.dst_ip)) /
+                                        fromInteger(valueof(NUM_OF_SERVERS));
+    tkn.remaining_spraying_hops = truncate(spray_hops);
+    get_token_from_bucket_idx = tkn;
 endfunction
 
 // Module to pick a spraying hop at random, using the LFSR modules.

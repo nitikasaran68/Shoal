@@ -8,8 +8,21 @@ import pieo_datatypes::*;
 
 /* NULL element is all 1s, i.e., e.id = '1, e.rank = '1, and e.send_time = '1
  * It is assumed that '1 for rank and send_time values equals Infinity
+ * But for shale, send time = NULL_BUCKET is infinity (ineligible).
 */
 
+/*
+ * To use pieo for Shale, we will treat send_time as bucket id (send_time=id)
+ * and smallest_send_time as bucket bitmap. These are initialized
+ * as '1 and 0. So, within sublists, we will have a sorted list
+ * of bucket IDs. Whenever we enq, updating the bitmap is straightforward.
+ * When we deq, we will always deq the first eligible element (will not use
+ * dequeue_f in shale), so if we have multiple elements with
+ * the same bucket id (send_time), we deq the first.
+ * So, to update the bitmap after deq, we need only check if the
+ * next element to the right has the same bucket id, and if not we flip
+ * the id to 0 in the bitmap.
+*/
 module pieo
 (
     input clk,
@@ -219,7 +232,7 @@ module pieo
         .log_width($clog2(NUM_OF_SUBLIST))
     ) pri_encoder(bit_vector, encode, valid);
 
-    //priority encoder for rank sublist
+    //priority encoder for rank sublist (to compare ranks within sublist for enq)
     logic [NUM_OF_SUBLIST/2-1:0] bit_vector_A;
     logic [$clog2(NUM_OF_SUBLIST/2)-1:0] encode_A;
     logic [$clog2(NUM_OF_SUBLIST/2)-1:0] encode_A_reg;
@@ -231,7 +244,7 @@ module pieo
         .log_width($clog2(NUM_OF_SUBLIST/2))
     ) pri_encoder_A(bit_vector_A, encode_A, valid_A);
 
-    //priority encoder for pred sublist
+    //priority encoder for pred sublist (to check send times within sublist)
     logic [NUM_OF_SUBLIST/2-1:0] bit_vector_AA;
     logic [$clog2(NUM_OF_SUBLIST/2)-1:0] encode_AA;
     logic [$clog2(NUM_OF_SUBLIST/2)-1:0] encode_AA_reg;
@@ -278,6 +291,8 @@ module pieo
     SublistElement element_moving_reg;
     logic [$clog2(NUM_OF_ELEMENTS_PER_SUBLIST)-1:0] element_moving_idx_reg;
     logic [TIME_LOG-1:0] pred_moving_reg;
+    logic del_bkt_reg;
+    logic del_bkt_neigh_reg;
 
     logic [1:0] enqueue_case_reg;
 
@@ -301,6 +316,7 @@ module pieo
 `endif
 
     always_comb begin
+        logic [TIME_LOG-1:0] temp;
         for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
             enable_A[i] = 0;
             write_A[i] = 0;
@@ -343,7 +359,7 @@ module pieo
                     address_A[i] = curr_address;
                     wr_data_A[i].id = 0;
                     wr_data_A[i].rank = '1;
-                    wr_data_A[i].send_time = '1;
+                    wr_data_A[i].send_time = NULL_BUCKET;
                     enable_AA[i] = 1;
                     write_AA[i] = 1;
                     address_AA[i] = curr_address;
@@ -373,9 +389,17 @@ module pieo
                     else if (dequeue_in) begin
                         //figure out the right sublist to deq
                         for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
+                            // bit_vector[i]
+                            //    = (curr_time_in
+                            //        >= pointer_array[i].smallest_send_time);
+                            
+                            // curr_time_in is the bitmask for eligibility of buckets
+                            // and smallest_send_time is the bitmask for each sublist of
+                            // bucket presence. We want to dequeue buckets that are
+                            // both present and eligible.
                             bit_vector[i]
                                 = (curr_time_in
-                                    >= pointer_array[i].smallest_send_time);
+                                    & pointer_array[i].smallest_send_time) > 0;
                         end
                         nxt_state = DEQ_FETCH_SUBLIST_FROM_MEM;
                     end else if (dequeue_f_in) begin
@@ -391,7 +415,7 @@ module pieo
 
             ENQ_FETCH_SUBLIST_FROM_MEM: begin
                 if (valid_reg) begin
-                    /* $display("enq valid! Sublist id %d", s.id); */
+                    $display("[PIEO] enq valid! Sublist id %d", s.id);
                     for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
                         enable_A[i] = 1;
                         write_A[i] = 0;
@@ -446,7 +470,8 @@ module pieo
             end
 
             ENQ_WRITE_BACK_TO_MEM: begin
-                /*$display("Enq case: %d", enqueue_case_reg);*/
+                $display("[PIEO] Enq case: %d", enqueue_case_reg);
+                del_bkt_reg = 0;
                 case (enqueue_case_reg)
                     0: begin
                         if (valid_A_reg & valid_AA_reg) begin
@@ -544,6 +569,8 @@ module pieo
                                 enable_AA[i] = 1;
                                 write_AA[i] = 1;
                                 address_AA[i] = s_reg.id;
+                                // If the element being moved out of A and the new element
+                                // have same send time, pred sublist stays exactly the same.
                                 if (pred_moving_reg == f_in_reg.send_time) begin
                                     wr_data_AA[i] = rd_data_AA_reg[i];
                                 end else if (pred_moving_reg < f_in_reg.send_time) begin
@@ -570,6 +597,19 @@ module pieo
                                         wr_data_AA[i] = rd_data_AA_reg[i];
                                     end
                                 end
+
+                                // In addition to editing pred sublist, check whether
+                                // there are two elements with the moved bucket id. If so,
+                                // we need not delete that bucket from the bitmap
+                                if ( pred_moving_reg == f_in_reg.send_time || 
+                                    ( (i < NUM_OF_ELEMENTS_PER_SUBLIST-1) && 
+                                    rd_data_AA_reg[i] == pred_moving_reg &&
+                                    rd_data_AA_reg[i] == rd_data_AA_reg[i+1]) )
+                                begin
+                                    $display("[PIEO] Multiple elements with bkt moved %d", pred_moving_reg);
+                                    del_bkt_reg = 0;
+                                end
+
                                 enable_B[i] = 1;
                                 write_B[i] = 1;
                                 address_B[i] = s_neigh_reg.id;
@@ -632,7 +672,8 @@ module pieo
 
             DEQ_FETCH_SUBLIST_FROM_MEM: begin
                 if (~valid_reg) begin
-                    /*$display("Deq: nothing eligible!");*/
+                    $display("Deq: nothing eligible!");
+                    // return null element since nothing eligible
                     deq_element_out.id = '1;
                     deq_element_out.rank = '1;
                     deq_element_out.send_time = '1;
@@ -670,7 +711,7 @@ module pieo
             POS_TO_DEQUEUE: begin
                 if (dequeue_in_reg) begin
                     for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
-                        bit_vector_A[i] = (curr_time_in_reg >= rd_data_A[i].send_time);
+                        bit_vector_A[i] = (curr_time_in_reg & (1 << rd_data_A[i].send_time)) > 0;
                     end
                 end else if (dequeue_f_in_reg) begin
                     for (integer i=0; i<NUM_OF_ELEMENTS_PER_SUBLIST; i=i+1) begin
@@ -723,7 +764,7 @@ module pieo
                                     if (i == NUM_OF_ELEMENTS_PER_SUBLIST-1) begin
                                         wr_data_A[i].id = 0;
                                         wr_data_A[i].rank = '1;
-                                        wr_data_A[i].send_time = '1;
+                                        wr_data_A[i].send_time = NULL_BUCKET;
                                     end else begin
                                         wr_data_A[i] = rd_data_A_reg[i+1];
                                     end
@@ -735,11 +776,18 @@ module pieo
                                     wr_data_AA[i] = rd_data_AA_reg[i];
                                 end else begin
                                     if (i == NUM_OF_ELEMENTS_PER_SUBLIST-1) begin
-                                        wr_data_AA[i] = '1;
+                                        wr_data_AA[i] = NULL_BUCKET;
                                     end else begin
                                         wr_data_AA[i] = rd_data_AA_reg[i+1];
+                                        
+                                        // In addition to editing pred sublist, check whether
+                                        // there are two elements with dequeued bucket id.
+                                        if (rd_data_AA_reg[i] == element_dequeued_reg.send_time
+                                            && rd_data_AA_reg[i] == rd_data_AA_reg[i+1])
+                                            del_bkt_reg = 0;
                                     end
                                 end
+                                
                             end
                             `ifdef SIMULATION_DEBUG
                             nxt_state = PRINT;
@@ -807,6 +855,18 @@ module pieo
                                     end else begin
                                         wr_data_AA[i] = rd_data_AA_reg[i];
                                     end
+                                
+                                // In addition to editing pred sublist, check whether
+                                // there are two elements with dequeued bucket id.
+                                if ( (pred_val_deq == pred_moving_reg) || 
+                                    ((i < NUM_OF_ELEMENTS_PER_SUBLIST-1)
+                                    && rd_data_AA_reg[i] == pred_val_deq
+                                    && rd_data_AA_reg[i] == rd_data_AA_reg[i+1]) )
+                                begin
+                                    $display("[PIEO] Multiple elements with bkt deleted %d", pred_val_deq);
+                                    del_bkt_reg = 0;
+                                end
+
                                 end
                                 enable_B[i] = 1;
                                 write_B[i] = 1;
@@ -815,7 +875,7 @@ module pieo
                                     if (i == s_neigh_reg.num-1) begin
                                         wr_data_B[i].id = 0;
                                         wr_data_B[i].rank = '1;
-                                        wr_data_B[i].send_time = '1;
+                                        wr_data_B[i].send_time = NULL_BUCKET;
                                     end else begin
                                         wr_data_B[i] = rd_data_B_reg[i];
                                     end
@@ -833,10 +893,20 @@ module pieo
                                     wr_data_BB[i] = rd_data_BB_reg[i];
                                 end else begin
                                     if (i == NUM_OF_ELEMENTS_PER_SUBLIST-1) begin
-                                        wr_data_BB[i] = '1;
+                                        wr_data_BB[i] = NULL_BUCKET;
                                     end else begin
                                         wr_data_BB[i] = rd_data_BB_reg[i+1];
                                     end
+                                end
+                                
+                                // In addition to editing pred sublist, check whether
+                                // there are two elements with moved bucket id.
+                                if ( (i < NUM_OF_ELEMENTS_PER_SUBLIST-1)
+                                    && rd_data_AA_reg[i] == pred_moving_reg
+                                    && rd_data_AA_reg[i] == rd_data_AA_reg[i+1] )
+                                begin
+                                    $display("[PIEO] Multiple elements with bkt moved %d", pred_moving_reg);
+                                    del_bkt_neigh_reg = 0;
                                 end
                             end
                             `ifdef SIMULATION_DEBUG
@@ -881,6 +951,7 @@ module pieo
     end
 
     always @(posedge clk) begin
+        logic [TIME_LOG-1:0] temp;
         if (rst) begin
             /*$display("[PIEO] rst set");*/
             curr_state <= RESET;
@@ -889,7 +960,8 @@ module pieo
             for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
                 pointer_array[i].id = i;
                 pointer_array[i].smallest_rank = '1;
-                pointer_array[i].smallest_send_time = '1;
+                // initially, all sublists have no flows, set bucket bitmap to 0
+                pointer_array[i].smallest_send_time = 0;
                 pointer_array[i].full = 0;
                 pointer_array[i].num = 0;
             end
@@ -1011,8 +1083,22 @@ module pieo
                                 pointer_array[i].id <= s_reg.id;
                                 pointer_array[i].smallest_rank <=
                                     (encode_A_reg == 0) ? f_in_reg.rank : rd_data_A_reg[0].rank;
-                                pointer_array[i].smallest_send_time <=
-                                    (encode_AA_reg == 0) ? f_in_reg.send_time : rd_data_AA_reg[0];
+                                
+                                // We're adding the input flow to this sublist, so update the
+                                // bitmap for bucket presence.
+                                temp = (1 << f_in_reg.send_time);
+                                temp = temp | pointer_array[i].smallest_send_time;
+                                pointer_array[i].smallest_send_time <= temp;
+                                $display("[PIEO] updated sublist bitmap %d | %d -> %d", 
+                                            pointer_array[i].smallest_send_time, 
+                                            1 << f_in_reg.send_time, temp);
+                                
+                                // For orig interpretation of send_time:
+                                // encode_AA_reg will be the idx in the pred sublist for the enqueued f_in.
+                                // So, if this is 0, f_in has smallest send time, else the first existing
+                                // element in the pred sublist has smallest send time.
+                                // pointer_array[i].smallest_send_time <=
+                                //    (encode_AA_reg == 0) ? f_in_reg.send_time : rd_data_AA_reg[0];
                                 pointer_array[i].full
                                     <= (s_reg.full || s_reg.num==NUM_OF_ELEMENTS_PER_SUBLIST-1);
                                 pointer_array[i].num <= s_reg.num + 1;
@@ -1025,8 +1111,15 @@ module pieo
                             if (i == s_idx_reg+1) begin
                                 pointer_array[i].id <= s_neigh_reg.id;
                                 pointer_array[i].smallest_rank <= f_in_reg.rank;
-                                pointer_array[i].smallest_send_time <=
-                                    (encode_BB_reg == 0) ? f_in_reg.send_time : rd_data_BB_reg[0];
+                                // We're adding the input flow to this sublist, so update the
+                                // bitmap for bucket presence.
+                                temp = (1 << f_in_reg.send_time) | pointer_array[i].smallest_send_time;
+                                pointer_array[i].smallest_send_time <= temp;
+                                $display("[PIEO] updated sublist bitmap %d | %d -> %d", 
+                                            pointer_array[i].smallest_send_time, 1 << f_in_reg.send_time, temp);
+                                
+                                // pointer_array[i].smallest_send_time <=
+                                //    (encode_BB_reg == 0) ? f_in_reg.send_time : rd_data_BB_reg[0];
                                 pointer_array[i].full
                                     <= (s_neigh_reg.num==NUM_OF_ELEMENTS_PER_SUBLIST-1);
                                 pointer_array[i].num <= s_neigh_reg.num + 1;
@@ -1040,6 +1133,28 @@ module pieo
                                 pointer_array[i].id <= s_reg.id;
                                 pointer_array[i].smallest_rank <=
                                     (encode_A_reg == 0) ? f_in_reg.rank : rd_data_A_reg[0].rank;
+                                
+                                // For smallest_send_time as bucket bitmap, we need to add
+                                // the enqueued element to the bitmap, and we may need to remove
+                                // the element moved if there isn't a duplicate for that bucket.
+                                // TODO: temp sensistivity list?
+                                temp = '1;
+                                if (del_bkt_reg)
+                                begin
+                                    temp = temp - (1 << element_moving_reg.send_time);
+                                end
+                                pointer_array[i].smallest_send_time <= 
+                                        (1 << f_in_reg.send_time) | 
+                                        (pointer_array[i].smallest_send_time & temp);
+                                $display("[PIEO] enq case2 updated sublist bitmap %d & %d | %d -> %d", pointer_array[i].smallest_send_time,
+                                    temp, 1 << f_in_reg.send_time, (1 << f_in_reg.send_time) 
+                                                | (pointer_array[i].smallest_send_time & temp));
+
+                                // For regular send_time interpretation:
+                                // If the element moved had the least send_time, we will
+                                // compare send time of the element being enq'd to 2nd
+                                // least send_time, else compare to least send_time.
+                                /*
                                 if (rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1].send_time
                                     == rd_data_AA_reg[0]) begin
                                     pointer_array[i].smallest_send_time
@@ -1050,6 +1165,8 @@ module pieo
                                         <= (f_in_reg.send_time < rd_data_AA_reg[0])
                                             ? f_in_reg.send_time : rd_data_AA_reg[0];
                                 end
+                                */
+
                                 pointer_array[i].full
                                     <= (s_reg.full || s_reg.num==NUM_OF_ELEMENTS_PER_SUBLIST-1);
                                 pointer_array[i].num <= s.num;
@@ -1057,11 +1174,18 @@ module pieo
                                 pointer_array[i].id <= s_neigh_reg.id;
                                 pointer_array[i].smallest_rank <=
                                     rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1].rank;
-                                pointer_array[i].smallest_send_time <=
-                                    (encode_BB_reg == 0)
-                                    ? rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1]
-                                        .send_time
-                                    : rd_data_BB_reg[0];
+                                pointer_array[i].smallest_send_time <= 
+                                    pointer_array[i].smallest_send_time |
+                                    (1 << rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1].send_time);
+                                $display("[PIEO] updated sublist bitmap %d | %d -> %d", pointer_array[i].smallest_send_time,
+                                    (1 << rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1].send_time),
+                                    pointer_array[i].smallest_send_time | (1 << rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1].send_time));
+                                
+                                // pointer_array[i].smallest_send_time <=
+                                //    (encode_BB_reg == 0)
+                                //    ? rd_data_A_reg[NUM_OF_ELEMENTS_PER_SUBLIST-1]
+                                //        .send_time
+                                //    : rd_data_BB_reg[0];
                                 pointer_array[i].full
                                     <= (s_neigh_reg.num==NUM_OF_ELEMENTS_PER_SUBLIST-1);
                                 pointer_array[i].num <= s_neigh_reg.num + 1;
@@ -1097,7 +1221,10 @@ module pieo
                         if (i == free_list_head_reg-1) begin
                             pointer_array[i].id <= s_reg.id;
                             pointer_array[i].smallest_rank <= '1;
-                            pointer_array[i].smallest_send_time <= '1;
+                            /* set to 0, since this sublist is now empty! */
+                            pointer_array[i].smallest_send_time <= 0;
+                            $display("[PIEO] Sublist %d is empty now, bitmap 0", i);
+                            // pointer_array[i].smallest_send_time <= '1;
                             pointer_array[i].full <= 0;
                             pointer_array[i].num <= 0;
                         end else if (i >= s_idx_reg
@@ -1124,7 +1251,9 @@ module pieo
                                 if (i == free_list_head_reg-1) begin
                                     pointer_array[i].id <= s_neigh_reg.id;
                                     pointer_array[i].smallest_rank <= '1;
-                                    pointer_array[i].smallest_send_time <= '1;
+                                    pointer_array[i].smallest_send_time <= 0;
+                                    $display("[PIEO] Sublist %d is empty now, bitmap 0", i);
+                                    // pointer_array[i].smallest_send_time <= '1;
                                     pointer_array[i].full <= 0;
                                     pointer_array[i].num <= 0;
                                 end else if (i >= ((s_neigh_type_reg==LEFT)
@@ -1161,9 +1290,19 @@ module pieo
                                         pointer_array[i].smallest_rank <=
                                             (encode_A_reg == 0) ? rd_data_A_reg[1].rank
                                                             : rd_data_A_reg[0].rank;
-                                        pointer_array[i].smallest_send_time
+                                        if (del_bkt_reg)
+                                        begin
+                                            pointer_array[i].smallest_send_time
+                                                <= pointer_array[i].smallest_send_time - (1 << element_dequeued_reg.send_time);
+                                            $display("[PIEO] updated sublist map %d - %d -> %d", 
+                                                pointer_array[i].smallest_send_time, (1 << element_dequeued_reg.send_time),
+                                                pointer_array[i].smallest_send_time - (1 << element_dequeued_reg.send_time));
+                                        end
+
+                                        /* pointer_array[i].smallest_send_time
                                             <= (rd_data_AA_reg[0] == element_dequeued_reg.send_time)
                                                 ? rd_data_AA_reg[1] : rd_data_AA_reg[0];
+                                        */
                                         pointer_array[i].full <= 0;
                                         pointer_array[i].num <= pointer_array[i].num - 1;
                                     end
@@ -1185,6 +1324,25 @@ module pieo
                                         ? element_moving_reg.rank
                                         : ((encode_A_reg == 0) ? rd_data_A_reg[1].rank
                                                                : rd_data_A_reg[0].rank);
+                                    // For smallest_send_time as bucket bitmap, we just need
+                                    // to flip buckets for element moved and dequeued as needed.
+                                    temp = pointer_array[i].smallest_send_time;
+                                    if (del_bkt_reg)
+                                    begin
+                                        temp = pointer_array[i].smallest_send_time - (1 << element_dequeued_reg.send_time);
+                                        $display("[PIEO] deq case 1 delete bkt, sublist bitmap %d - %d -> %d", 
+                                            pointer_array[i].smallest_send_time, (1 << element_dequeued_reg.send_time), temp);
+                                    end
+                                    pointer_array[i].smallest_send_time <=
+                                        temp | (1 << element_moving_reg.send_time);
+                                    $display("[PIEO] deq case 1 update sublist bitmap %d | %d -> %d", 
+                                        temp, (1 << element_moving_reg.send_time), temp | (1 << element_moving_reg.send_time));
+                                    
+                                    // For regular send_time interpretation:
+                                    // If the element deq'ed had the least send_time, we will
+                                    // compare send time of the element being moved in to 2nd
+                                    // least send_time, else compare to least send_time.
+                                    /*
                                     if (element_dequeued_reg.send_time == rd_data_AA_reg[0]) begin
                                         pointer_array[i].smallest_send_time
                                             <= (element_moving_reg.send_time < rd_data_AA_reg[1])
@@ -1194,19 +1352,34 @@ module pieo
                                             <= (element_moving_reg.send_time < rd_data_AA_reg[0])
                                                 ? element_moving_reg.send_time : rd_data_AA_reg[0];
                                     end
+                                    */
                                     pointer_array[i].full = s_reg.full;
                                     pointer_array[i].num = s_reg.num;
                                 end
                             end
                             if (s_neigh_reg.num != 1) begin
+                                // Update smallest rank & send time for nbr sublists
+                                // from which an element was moved out.
                                 if (s_neigh_type_reg == LEFT) begin
                                     for (integer i=0; i<NUM_OF_SUBLIST; i=i+1) begin
                                         if (i == s_idx_reg-1) begin
                                             pointer_array[i].id <= s_neigh_reg.id;
                                             pointer_array[i].smallest_rank <= s_neigh_reg.smallest_rank;
-                                            pointer_array[i].smallest_send_time
+                                            
+                                            if (del_bkt_neigh_reg)
+                                            begin
+                                                pointer_array[i].smallest_send_time <= 
+                                                    pointer_array[i].smallest_send_time 
+                                                    - (1 << element_moving_reg.send_time);
+                                                $display("[PIEO] deq case 1 delete bkt, neigh sublist bitmap %d - %d -> %d", 
+                                                    pointer_array[i].smallest_send_time, (1 << element_moving_reg.send_time),
+                                                    pointer_array[i].smallest_send_time - (1 << element_moving_reg.send_time));
+                                            end
+                                            
+                                            /* pointer_array[i].smallest_send_time
                                                 <= (element_moving_reg.send_time == rd_data_BB_reg[0])
-                                                ? rd_data_BB_reg[1] : rd_data_BB_reg[0];
+                                                ? rd_data_BB_reg[1] : rd_data_BB_reg[0]; */
+
                                             pointer_array[i].full <= s_neigh_reg.full;
                                             pointer_array[i].num <= s_neigh_reg.num - 1;
                                         end
@@ -1217,9 +1390,21 @@ module pieo
                                             pointer_array[i].id <= s_neigh_reg.id;
                                             pointer_array[i].smallest_rank <=
                                                 rd_data_B_reg[1].rank;
-                                            pointer_array[i].smallest_send_time
+                                            
+                                            if (del_bkt_neigh_reg)
+                                            begin
+                                                pointer_array[i].smallest_send_time <= 
+                                                    pointer_array[i].smallest_send_time 
+                                                    - (1 << element_moving_reg.send_time);
+                                                $display("[PIEO] deq case 1 delete bkt, neigh sublist bitmap %d - %d -> %d", 
+                                                    pointer_array[i].smallest_send_time, (1 << element_moving_reg.send_time),
+                                                    pointer_array[i].smallest_send_time - (1 << element_moving_reg.send_time));
+                                            end
+
+                                            /*pointer_array[i].smallest_send_time
                                                 <= (rd_data_B_reg[0].send_time == rd_data_BB_reg[0])
-                                                ? rd_data_BB_reg[1] : rd_data_BB_reg[0];
+                                                ? rd_data_BB_reg[1] : rd_data_BB_reg[0];*/
+
                                             pointer_array[i].full <= s_neigh_reg.full;
                                             pointer_array[i].num <= s_neigh_reg.num - 1;
                                         end

@@ -3,32 +3,38 @@ import DefaultValue::*;
 import XilinxCells::*;
 import GetPut::*;
 
+import ShaleUtil::*;
+
 // NOTE: Set these according to pieo_datatypes.sv !!
 
-// TODO: PIEO_LIST_SIZE should be the same as max num token buckets * buckt size
+// TODO: PIEO_LIST_SIZE should be the same as max num fwd token buckets * buckt size
 
-typedef 16 PIEO_LIST_SIZE;      // Max number of elements in PIEO queue.
+typedef 9 PIEO_LIST_SIZE;       // Max number of elements in PIEO queue - round up to perfect square.
 typedef 4 ID_LOG;               // clog2(PIEO_LIST_SIZE) bits to store max flow ID
+typedef 3 NODE_ID_LOG;        // Bits to store prev hop of cell.
+// typedef 3 PHASE_LOG;
+// typedef 3 TIMESLOT_LOG;
 typedef 4 RANK_LOG;             // bits to store flow rank
-typedef 16 TIME_LOG;            // bits to store flow send time
-typedef 24 PIEO_ELEMENT_BITS;   // ID_LOG + RANK_LOG + TIME_LOG bits to store a flow in PIEO
-typedef 15 PIEO_NULL_ID;        // 2**RANK_LOG - 1
+typedef 6 TIME_LOG;            // bits to store flow send time
+typedef 17 PIEO_ELEMENT_BITS;   // bits to store a flow in PIEO
+typedef 15 PIEO_NULL_ID;        // 2**ID_LOG - 1
 
 typedef 3 CLOG2_NUM_OF_SUBLIST; // bits to store sublist ID
 
 // Struct enqueued and dequeued from PIEO.
 typedef struct
 {
-    Bit#(ID_LOG)    id;
-    Bit#(RANK_LOG)  rank;           //init with infinity
-    Bit#(TIME_LOG)  send_time;
-
+    Phase    prev_hop_phase;                // For FWD cells, hop this cell was recvd from.
+    Coordinate prev_hop_slot;
+    Bit#(RANK_LOG)  rank;                   // init with infinity
+    Bit#(ID_LOG)  id;
+    Phase rem_spraying_hops_recvd;
 } PIEOElement deriving(Bits, Eq);
 
 
 interface PIEOQueue;
 
-    method Action dequeue();
+    method Action dequeue(Bit#(TIME_LOG) curr_time);
     method Action dequeue_f( Bit#(ID_LOG) id, Bit#(CLOG2_NUM_OF_SUBLIST) sublist_id);
     method PIEOElement get_dequeue_result();
 
@@ -51,11 +57,11 @@ module mkPIEOQueue (PIEOQueue);
 
     // Fix current time input for dequeue to be 0, since eligibility is binary for Shale.
     // Send time for each flow will be 1 when not eligible, and 0 otherwise.
-    port curr_time_in = 0;
+    // port curr_time_in = 0;
     
     method dequeue_f(flow_id_in, sublist_id_in) ready (pieo_ready_for_nxt_op_out) enable (dequeue_f_in);
 
-    method dequeue() enable (dequeue_in) ready(pieo_ready_for_nxt_op_out);
+    method dequeue(curr_time_in) enable (dequeue_in) ready(pieo_ready_for_nxt_op_out);
 
     method deq_element_out get_dequeue_result() ready(deq_valid_out);
 

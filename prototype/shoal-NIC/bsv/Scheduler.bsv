@@ -234,11 +234,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         endrule
     end
 
-    /*------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------*/
 
                                 /* Tx Path */
 
-    /*------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------*/
 
     // BRAM to store cells to forward.
     // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
@@ -246,15 +246,18 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_TOKEN_BUCKETS,
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
             fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
-                (mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE)))))));
+                mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE))))));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
         total_fwd_buffer_len <- replicateM(mkReg(0));
-    
+
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         PIEOQueue))) fwd_pieo <- replicateM(replicateM(replicateM(mkPIEOQueue)));
-    
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         Reg#(Bit#(1))))) pieo_init_done <- replicateM(replicateM(replicateM(mkReg(0))));
+
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Reg#(Bit#(BUCKET_IDX_BITS))))) 
+        pending_token <- replicateM(replicateM(replicateM(mkReg(fromInteger(valueof(FINAL_DST_BUCKET_IDX))))));
+    
     
     // Initialize PIEO by resetting queues
     // TODO: Need some way to make sure this reset is over before we syart scheduler ops.
@@ -267,7 +270,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 rule test_pieo_prep(pieo_init_done[i][j][k] == 0);
                     pieo_init_done[i][j][k] <= 1;
                     fwd_pieo[i][j][k].reset_queue();
-                    $display("pieo reset method called");
+                    $display("pieo reset method called %d %d %d", i,j,k);
                 endrule
             end
         end
@@ -276,7 +279,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // State to determine next cell to send.
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(BufType))
         buffer_to_send_from <- replicateM(mkReg(HOST));
-    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(4)))
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(BUCKET_IDX_BITS)))
         tx_fwd_bucket_idx <- replicateM(mkReg(0));
         
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex))
@@ -352,15 +355,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
         rule req_dummy_cell (running[i] == 1 && clock_within_timeslot[i] == 6
                         && buffer_to_send_from[i] == DUMMY);
-            if (verbose)
-                $display("[SCHED %d] Requesting dummy cell", host_index[i]);
             cell_generator[i].dummy_cell_req.put(?);
         endrule
 
         rule get_dummy_cell;
             let d <- cell_generator[i].dummy_cell_res.get;
-            if (verbose)
-                $display("[SCHED %d] Enqueuing dummy cell", host_index[i]);
             cell_to_send_fifo[i].enq(d);
         endrule
 
@@ -387,6 +386,21 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // Bit#(HEADER_SIZE) x = {host_index[i], current_neighbor[i], '0};
                 // h = d.data.payload[s:e] | x;
 
+                Bit#(BUCKET_IDX_BITS) token_bkt = pending_token[i][current_phase[i]][current_timeslot[i]];
+                if (token_bkt != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                begin
+                    Token tkn = get_token_from_bucket_idx(token_bkt);
+                    h[valueof(HDR_TOKEN_1_S):valueof(HDR_TOKEN_1_E)] = pack(tkn);
+                    if (verbose)
+                        $display("[SCHED %d] Attaching token for bkt %d, %d (# %d)", 
+                            host_index[i], tkn.dst_ip, tkn.remaining_spraying_hops, token_bkt);
+                    pending_token[i][current_phase[i]][current_timeslot[i]] <= fromInteger(valueof(FINAL_DST_BUCKET_IDX));
+                end
+                else
+                begin
+                    Bit#(TOKEN_SIZE) dummy_tkn = '1;    
+                    h[valueof(HDR_TOKEN_1_S):valueof(HDR_TOKEN_1_E)] = dummy_tkn;
+                end
                 curr_header[i] <= h;
             end
 
@@ -436,6 +450,19 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Phase)) 
         curr_src_mac_phase <- replicateM(mkReg(0));
 
+    
+    // TODO: Set bits for num tokens.
+    // TODO: Two tokens for same bucket opt.
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE,
+        FIFO#(Bit#(BUCKET_IDX_BITS))))) update_tokens_fifo <- replicateM(replicateM(replicateM(mkFIFO))); 
+
+    // Matrix to store available tokens per nbr, bucket. Initially,
+    // each bucket has 1 token each.
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
+        Vector#(NUM_TOKEN_BUCKETS, Reg#(Bit#(TOKEN_COUNT_SIZE)))))) tkn_count 
+            <- replicateM(replicateM(replicateM(replicateM(mkReg(1)))));
+    // PIEOCurrentTime pieo_current_time_in;
+
     // Module to pick spraying hops.
     RandomHopGenerator rng_hop <-mkRandomHopGenerator;
 
@@ -452,6 +479,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             Phase src_mac_phase = curr_src_mac_phase[i];
             Phase remaining_spraying_hops = curr_remaining_spray_hops[i];
             Bit#(1) dummy_bit = curr_dummy_bit[i];
+
+            Integer src_mac_phase_int = 0;
+            if (curr_src_mac_phase[i] == 1) src_mac_phase_int = 1;
+            // if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
 
             Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
@@ -477,6 +508,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 src_mac_phase = hd[valueof(HDR_SRC_PHASE_S): valueof(HDR_SRC_PHASE_E)];
                 remaining_spraying_hops = hd[valueof(HDR_SPRAY_HOPS_S):valueof(HDR_SPRAY_HOPS_E)];
                 dummy_bit = hd[valueof(HDR_DUMMY_BIT)];
+
+                // hard-coded mapping to integer.
+                src_mac_phase_int = 0;
+                if (src_mac_phase == 1) src_mac_phase_int = 1;
+                // if (src_mac_phase == 2) src_mac_phase_int = 2;
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;
@@ -512,6 +548,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             // TODO: Assumes header size of 64 and BUS_WIDTH of 512, fix for different values of these.
             // Last header chunk is of size BUS_WIDTH % header size.
+            // hard-coded header size
             Bit#(BUS_WIDTH) c = {hd, hd, hd, hd, hd, hd[87:16]};
 
             if (corrupted_cell == 0)
@@ -571,132 +608,147 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             curr_corrupted_cell[i] <= corrupted_cell;
 
-            // --------------------------- Forwarding Logic ------------------------------
-
-
-            // Put cells to forward in appropriate buffers.
-            // TODO: Fix use of valueof and Integer here!
-            if (corrupted_cell == 0 && dummy_bit == 0 && dst_ip != host_index[i])
+            if (corrupted_cell == 0)
             begin
-                
-                
 
-                ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
-                Phase next_hop_phase = 0;
-                Coordinate next_hop_timeslot = 0;
-
-                if (remaining_spraying_hops > 0)
+                // Parse tokens and update count.
+                Token tkn1;
+                tkn1.dst_ip = hd[valueof(HDR_TOKEN_1_S): valueof(HDR_TOKEN_1_S)-8];
+                tkn1.remaining_spraying_hops = hd[valueof(HDR_TOKEN_1_S)-9: valueof(HDR_TOKEN_1_E)];
+                ServerIndex null_idx = '1;
+                if (tkn1.dst_ip != null_idx)
                 begin
-                    next_hop_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
-                    
-                    // Select random hop if there is more than one hop possible.
-                    // Bit#(3) spray_slot = 0;                    
-                    // if (valueof(PHASE_SIZE) > 1)
-                    // begin  
-                    //     spray_slot <- rng_hop.get;
-                    //     if(verbose) $display("Random hop selected: %d", spray_slot);
-                    // end
-                    // next_hop = schedule_table[i][next_hop_phase][spray_slot];
-
-                    // Spray short.
-                    Bit#(64) min_buffer_len = fromInteger(valueof(NUM_TOKEN_BUCKETS));
-                    Token bucket;
-                    bucket.dst_ip = dst_ip;
-                    bucket.remaining_spraying_hops = remaining_spraying_hops;
-                    Bit#(64) bkt_idx = get_fwd_bucket_idx(bucket);
-                    for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
-                    begin
-                        ServerIndex nbr = schedule_table[i][next_hop_phase][j];
-                        Bit#(64) len = fwd_buffer[i][next_hop_phase][j][bkt_idx].elements;
-                        if(min_buffer_len > len)
-                        begin
-                            min_buffer_len = len;
-                            next_hop = nbr;
-                            next_hop_timeslot = fromInteger(j);
-                        end
-                    end
-                    
-                    // remaining_spraying_hops = remaining_spraying_hops - 1;
-                    // TODO: This shouldn't be set here, in Tx.
-                    d.payload[458:456] = remaining_spraying_hops - 1;           // TODO: hard-coded index!
                     if (verbose)
-                        $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d, dst=%d on phase %d", 
-                            host_index[i], next_hop, min_buffer_len, remaining_spraying_hops-1, dst_ip, next_hop_phase);
-                end
-                else
-                begin
-                    // Find next phase where my coordinates don't match with the destination.
-                    // TODO: Fix hard-code for next phase init.
-                    Integer next_phase = 0;
-                    if (src_mac_phase == 1) next_phase = 1;
-                    if (src_mac_phase == 2) next_phase = 2;
+                        $display("[SCHED %d] got token for bkt %d,%d", 
+                            host_index[i], tkn1.dst_ip, tkn1.remaining_spraying_hops);
+                    Coordinate c_ = get_coordinate(src_mac, src_mac_phase_int);
+                    Coordinate slot = get_timeslot_with_matching_coordinate(host_index[i], c_, src_mac_phase_int);
 
-                    for (Integer phase = 0; phase < valueof(NUM_OF_PHASES); phase = phase + 1)
+                    update_tokens_fifo[i][src_mac_phase][slot].enq(truncate(get_fwd_bucket_idx(tkn1)));
+                end
+
+                // --------------------------- Forwarding Logic ------------------------------
+
+                if (dummy_bit == 0 && dst_ip != host_index[i])
+                begin
+
+                    ServerIndex next_hop = fromInteger(valueof(NUM_OF_SERVERS) + 1);
+                    Phase next_hop_phase = 0;
+                    Coordinate next_hop_timeslot = 0;
+                    Phase rem_spraying_hops_recvd = 0;
+
+                    if (remaining_spraying_hops > 0)
                     begin
-                        next_phase = (next_phase + 1) % valueof(NUM_OF_PHASES);
-                        Coordinate dst_coord = get_coordinate(dst_ip, next_phase);
-                        Coordinate my_coord = get_coordinate(host_index[i], next_phase);
-                        // If next hop not yet found, and phase coordinate doesn't match me, only then set.
-                        if (next_hop == fromInteger(valueof(NUM_OF_SERVERS) + 1) &&
-                            dst_coord != my_coord) 
+                        next_hop_phase = (src_mac_phase + 1) % fromInteger(valueof(NUM_OF_PHASES));
+                        
+                        // Select random hop if there is more than one hop possible.
+                        // Bit#(3) spray_slot = 0;                    
+                        // if (valueof(PHASE_SIZE) > 1)
+                        // begin  
+                        //     spray_slot <- rng_hop.get;
+                        //     if(verbose) $display("Random hop selected: %d", spray_slot);
+                        // end
+                        // next_hop = schedule_table[i][next_hop_phase][spray_slot];
+
+                        // Spray short.
+                        Bit#(64) min_buffer_len = fromInteger(valueof(NUM_TOKEN_BUCKETS));
+                        Token bucket;
+                        bucket.dst_ip = dst_ip;
+                        bucket.remaining_spraying_hops = remaining_spraying_hops;
+                        Bit#(64) bkt_idx = get_fwd_bucket_idx(bucket);
+                        for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
                         begin
-                            next_hop_phase = fromInteger(next_phase);
-                            next_hop_timeslot = get_timeslot_with_matching_coordinate(host_index[i], dst_coord, next_phase);
-                            next_hop = schedule_table[i][next_hop_phase][next_hop_timeslot];
-                            if (verbose)
+                            ServerIndex nbr = schedule_table[i][next_hop_phase][j];
+                            Bit#(64) len = fwd_buffer[i][next_hop_phase][j][bkt_idx].elements;
+                            if(min_buffer_len > len)
                             begin
-                                let next_hop_coord = get_coordinate(next_hop, next_phase);
-                                $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d, SANITY_CHECK=%d", 
-                                            host_index[i], next_hop, next_phase, dst_ip, next_hop_coord == dst_coord);
+                                min_buffer_len = len;
+                                next_hop = nbr;
+                                next_hop_timeslot = fromInteger(j);
+                            end
+                        end
+                        
+                        rem_spraying_hops_recvd = remaining_spraying_hops;
+                        remaining_spraying_hops = remaining_spraying_hops - 1;
+                        d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
+                        if (verbose)
+                            $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d, dst=%d on phase %d", 
+                                host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, dst_ip, next_hop_phase);
+                    end
+                    else
+                    begin
+                        // Find next phase where my coordinates don't match with the destination.
+                        // TODO: Fix hard-code for next phase init.
+                        Integer next_phase = src_mac_phase_int;
+                        for (Integer phase = 0; phase < valueof(NUM_OF_PHASES); phase = phase + 1)
+                        begin
+                            next_phase = (next_phase + 1) % valueof(NUM_OF_PHASES);
+                            Coordinate dst_coord = get_coordinate(dst_ip, next_phase);
+                            Coordinate my_coord = get_coordinate(host_index[i], next_phase);
+                            // If next hop not yet found, and phase coordinate doesn't match me, only then set.
+                            if (next_hop == fromInteger(valueof(NUM_OF_SERVERS) + 1) &&
+                                dst_coord != my_coord) 
+                            begin
+                                next_hop_phase = fromInteger(next_phase);
+                                next_hop_timeslot = get_timeslot_with_matching_coordinate(host_index[i], dst_coord, next_phase);
+                                next_hop = schedule_table[i][next_hop_phase][next_hop_timeslot];
+                                if (verbose)
+                                begin
+                                    let next_hop_coord = get_coordinate(next_hop, next_phase);
+                                    $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d, SANITY_CHECK=%d", 
+                                                host_index[i], next_hop, next_phase, dst_ip, next_hop_coord == dst_coord);
+                                end
                             end
                         end
                     end
-                end
-                
-                // Get bucket_idx for this packet.
-                // Here we're using the # of spray hops when received.
-                // This is the same indexing we'll use to send tokens
-                // to the src_mac. BUT I think this will have to be changed
-                // to the spray hops value we will fwd, because that is what
-                // we count in received tokens.
-                // TODO: Change to index by outgoing (N,h), and store src_mac,
-                // and recv bucket with the fwd cell or the pieo item!
-                Bit#(64) bucket_idx;
-                if (dst_ip == next_hop)
-                    bucket_idx =  fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
-                else
-                begin
-                    Token bucket;
-                    bucket.dst_ip = dst_ip;
-                    bucket.remaining_spraying_hops = remaining_spraying_hops;
-                    bucket_idx = get_fwd_bucket_idx(bucket);
-                end
+                    
+                    // Get bucket_idx for this packet.
+                    // Here we're using the # of spray hops when received.
+                    // This is the same indexing we'll use to send tokens
+                    // to the src_mac. BUT I think this will have to be changed
+                    // to the spray hops value we will fwd, because that is what
+                    // we count in received tokens.
+                    // TODO: Change to index by outgoing (N,h), and store src_mac,
+                    // and recv bucket with the fwd cell or the pieo item!
+                    Bit#(64) bucket_idx;
+                    if (dst_ip == next_hop)
+                        bucket_idx =  fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
+                    else
+                    begin
+                        Token bucket;
+                        bucket.dst_ip = dst_ip;
+                        bucket.remaining_spraying_hops = remaining_spraying_hops;
+                        bucket_idx = get_fwd_bucket_idx(bucket);
+                    end
 
-                if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].full)
-                begin
-                    fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].write_request.put
-                        (makeWriteReq(d.sop, d.eop, d.payload));
-                    total_fwd_buffer_len[i] <= total_fwd_buffer_len[i] + 1;
-                
-                    // Enqueue this flow (bucket) in PIEO, and mark as eligible.
-                    // TODO: This is temporary. What we need is to enqueue
-                    // all buckets initially in PIEO and change eligibility
-                    // as we receive/use tokens, and dequeue / re-enqueue.
-                    // Another possibility is to keep this design, where each idv packet is enqueued
-                    // into PIEO, and we just pass current_time with eligibility info for each bucket.
-                    // This way we need not call dequeue_f to update eligibility for buckets! And we
-                    // also don't need to re-enqueue. So things stay the same as is! This would require 
-                    // current_time to not be hard-wired to 1 in PIEO bsv code.
-                    PIEOElement flow;
-                    flow.id = truncate(bucket_idx);
-                    flow.rank = 0;
-                    flow.send_time = 0;
-                    if (verbose)
-                        $display("[SCHED %d] Enqueuing bucket idx %d in PIEO, fwd buffer", host_index[i], bucket_idx);
-                    fwd_pieo[i][next_hop_phase][next_hop_timeslot].enqueue(flow);
+                    // TODO: Will probably have to move some of these ops to a different rule
+                    // and define conflict behaviour with Tx path.
+                    if (!fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].full)
+                    begin
+                        fwd_buffer[i][next_hop_phase][next_hop_timeslot][bucket_idx].write_request.put
+                            (makeWriteReq(d.sop, d.eop, d.payload));
+                        total_fwd_buffer_len[i] <= total_fwd_buffer_len[i] + 1;
+                    
+                        // Each idv packet is enqueued into PIEO with the bucket ID, 
+                        // and we just pass current_time with eligibility info for each bucket.
+                        // This way we need not call dequeue_f to update eligibility for buckets!
+                        //  And we also don't need to re-enqueue buckets.
+                        PIEOElement flow;
+                        flow.id = truncate(bucket_idx);
+                        flow.rank = 0;
+                        flow.prev_hop_phase = src_mac_phase;
+                        flow.prev_hop_slot = get_timeslot_with_matching_coordinate(host_index[i], 
+                                                get_coordinate(src_mac, src_mac_phase_int), src_mac_phase_int);
+                        flow.rem_spraying_hops_recvd = rem_spraying_hops_recvd;
+                        if (verbose)
+                            $display("[SCHED %d] Enqueuing bucket idx %d in PIEO, fwd buffer for %d", 
+                                host_index[i], bucket_idx, schedule_table[i][next_hop_phase][next_hop_timeslot]);
+                        fwd_pieo[i][next_hop_phase][next_hop_timeslot].enqueue(flow);
+                    end
+                    else $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d!!", 
+                                host_index[i], next_hop, bucket_idx);
+                    
                 end
-                else $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d!!", host_index[i], next_hop, bucket_idx);
-                
             end
 
         endrule
@@ -716,31 +768,42 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             for (Integer k = 0; k < valueof(PHASE_SIZE); k = k + 1)
             begin
 
+                (* descending_urgency = "choose_buffer_to_send_from, update_tokens" *)
+
                 // Update flow eligibility for each flow via current neighbor,
                 // based on tokens parsed in receive path.
-                // rule update_tokens;
-                //     let d <- toGet(update_tokens_fifo[i][j]).get;
-                //     if(token1 updated)
-                //         pieo_queue_id = get_bucket_id(token1.dst_ip, token1.remaining_spraying_hops);
-                //         Flow f = pieo.dequeue(pieo_queue_id);
-                //         f.predicate = True;
-                //         pieo.enqueue(f);
-                //     if(token2 updated)
-                //         pieo_queue_id = get_bucket_id(token2.dst_ip, token2.remaining_spraying_hops);
-                //         Flow f = pieo.dequeue(pieo_queue_id);
-                //         f.predicate = True;
-                //         pieo.enqueue(f);
-                //     choose_buffer_to_send_from_fifo[i][j].enq(?);
-                // endrule
+                // TODO: In order to minimize conflict between choose buffer rules
+                // and Rx processing, we could update tkn_count in Rx, but have this 
+                // rule to update curr_time_in. In this case, regardless of number of
+                // tokens, we only add 1 cycle overhead to Shoal processing. 
+                rule update_tokens;
+                    let tkn_bkt_idx <- toGet(update_tokens_fifo[i][j][k]).get;
+                    tkn_count[i][j][k][tkn_bkt_idx] <= tkn_count[i][j][k][tkn_bkt_idx] + 1;
+                    // curr_time_in = curr_time_in | 1 << fromInteger(tkn_bkt_idx);
+                endrule
 
                 // To select local flow to send, we want to pick the next flow 
                 // in round robin that has cells to send.  
                 rule choose_buffer_to_send_from;
                     let dc <- toGet(choose_buffer_to_send_from_fifo[i][j][k]).get;
+                    
+                    // For testing, mark everything as eligble.
+                    // PIEOCurrentTime curr_time_in = '1;
+
+                    // Final dst bucket is always eligible. For others (up to num_buckets - 1)
+                    // check that there exist tokens AND packets.
+                    PIEOCurrentTime curr_time_in = 1 << fromInteger(valueof(FINAL_DST_BUCKET_IDX));
+                    for(Integer bkt = 0; bkt < valueof(NUM_FWD_TOKEN_BUCKETS); bkt = bkt + 1)
+                    begin
+                        if (tkn_count[i][j][k][bkt] > 0)    
+                            curr_time_in = curr_time_in | 1 << fromInteger(bkt);
+                    end
+
                     if (verbose)
-                        $display("[SCHED %d] Sent deq request at time=%d", host_index[i], current_time);
+                        $display("[SCHED %d] Sent deq request at time=%d, curr_time_in=%d", 
+                                    host_index[i], current_time, curr_time_in);
                     // First priority to remote cells to forward.
-                    fwd_pieo[i][j][k].dequeue();
+                    fwd_pieo[i][j][k].dequeue(extend(curr_time_in));
                 endrule
 
                 rule choose_buffer_to_send_from_2;
@@ -748,12 +811,31 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     if (verbose)
                         $display("[SCHED %d] DEQ result at time %d: %d", host_index[i], current_time, x.id);
 
+                    Bit#(BUCKET_IDX_BITS) bkt_idx = fromInteger(valueof(FINAL_DST_BUCKET_IDX));
                     if (x.id != fromInteger(valueof(PIEO_NULL_ID)))
                     begin
                         buffer_to_send_from[i] <= FWD;
                         tx_fwd_bucket_idx[i] <= x.id;
+                        bkt_idx = x.id;
                         if (verbose)
-                            $display("[SCHED %d] chose to send FWD cell from bucket %d.", host_index[i], x.id);
+                            $display("[SCHED %d] chose to send FWD cell from bucket %d, prev_hop = %d", 
+                                host_index[i], x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot]);
+
+                        // Enqueue token to send to previous hop of chosen cell
+                        if (pending_token[i][x.prev_hop_phase][x.prev_hop_slot] != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                            $display("[SCHED %d] Token Queue full!", i, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot]);
+                        else
+                        begin
+                            Token tkn;
+                            if(x.id == fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                                tkn.dst_ip = schedule_table[i][j][k];
+                            else
+                                tkn = get_token_from_bucket_idx(x.id);
+                            // Set number of spray hops in the token sent, based on value recvd from prev hop.
+                            tkn.remaining_spraying_hops = x.rem_spraying_hops_recvd;
+                            pending_token[i][x.prev_hop_phase][x.prev_hop_slot] 
+                                    <= truncate(get_fwd_bucket_idx(tkn));
+                        end
                     end
 
                     // Then send any local flows that are ready, else send dummy flows. 
@@ -769,17 +851,37 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 dst = d;
                         
                         ServerIndex host_flow_chosen = fromInteger(valueof(NUM_OF_SERVERS)) + 1;
+                        Integer base_host_bkt_idx = 1 + ((valueof(NUM_OF_PHASES)-1) 
+                                                    * valueof(NUM_OF_SERVERS));
+                        Bit#(BUCKET_IDX_BITS) host_bkt_chosen = 0;
+                        Bit#(NUM_OF_SERVERS) pkt_bitmap = 0;
+                        Bit#(NUM_OF_SERVERS) tkn_bitmap = 0;
                         for(Integer d = 0; d < valueof(NUM_OF_SERVERS); d = d + 1)
                         begin
+                            Integer relv_bkt = base_host_bkt_idx + dst;
+                            if(fromInteger(dst) == schedule_table[i][j][k])
+                                relv_bkt = valueof(FINAL_DST_BUCKET_IDX);
                             if (!cell_generator[i].isEmpty(dst) && dst != i &&
+                                tkn_count[i][j][k][relv_bkt] > 0 &&
                                 host_flow_chosen == fromInteger(valueof(NUM_OF_SERVERS) + 1))
+                            begin
                                 host_flow_chosen = fromInteger(dst);
+                                host_bkt_chosen = fromInteger(relv_bkt);
+                            end
                             dst = (dst + 1) % valueof(NUM_OF_SERVERS);
+
+                            if(!cell_generator[i].isEmpty(dst))
+                                pkt_bitmap = pkt_bitmap | 1 << dst;
+                            if(tkn_count[i][j][k][base_host_bkt_idx + dst] > 0)
+                                tkn_bitmap = tkn_bitmap | 1 << dst;
                         end
+
+                        if (verbose)
+                            $display("[SCHED %d] Tkn bitmap: %d; Pkt bitmap: %d", 
+                                    host_index[i], tkn_bitmap, pkt_bitmap);
                         // ========================================
                         // If we were to use PIEO here:
 
-                        // // does NULL exist in BSV??
                         // Flow f = local_flow_queue.dequeue();
                         // if (f != NULL)
                         // begin 
@@ -798,6 +900,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 $display("[SCHED %d] chose to send HOST cell at time=%d.", host_index[i], current_time);
                             buffer_to_send_from[i] <= HOST;
                             host_flow_to_send[i] <= host_flow_chosen;
+                            bkt_idx = host_bkt_chosen;
 
                             // Set host flow index for next turn. Check to not send to self.
                             ServerIndex next_flow_idx = (host_flow_chosen + 1) % fromInteger(valueof(NUM_OF_SERVERS));
@@ -815,6 +918,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         end
                     end
 
+                    // If FWD/HOST and not sending to final dest, expend a token from relevant bucket.
+                    if (bkt_idx != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                    begin
+                        tkn_count[i][j][k][bkt_idx] <= tkn_count[i][j][k][bkt_idx] - 1;
+                        if (verbose)
+                            $display("[SCHED %d] Decreasing tokens for bkt %d nbr %d,%d",
+                                        host_index[i], bkt_idx, j, k);
+                    end
+
                 endrule
             end
         end
@@ -829,12 +941,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
 /*------------------------------------------------------------------------------*/
 
-// The WAIT_FOR_START_SIG option sets the start flag only on getting a signal from the mac.
-// This happens when the Mac receives its first cell.
-// TODO: our code might not work with this option, because if start_flag is set on first receive, 
-// the receive path is then activated activated. But we need to ensure that coordinates
-// and schedule table have been set. May need to add checks for this.
-`ifdef WAIT_FOR_START_SIG
+    // The WAIT_FOR_START_SIG option sets the start flag only on getting a signal from the mac.
+    // This happens when the Mac receives its first cell.
+    // TODO: our code might not work with this option, because if start_flag is set on first receive, 
+    // the receive path is then activated activated. But we need to ensure that coordinates
+    // and schedule table have been set. May need to add checks for this.
+    `ifdef WAIT_FOR_START_SIG
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
         rule start_scheduler;
@@ -842,7 +954,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             start_flag[i] <= 1;
         endrule
     end
-`endif
+    `endif
 
     Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp1;
     Vector#(NUM_OF_ALTERA_PORTS, Get#(Bit#(64))) temp4;
@@ -874,9 +986,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         begin
             host_index[i] <= (first_host_index
                 * fromInteger(valueof(NUM_OF_ALTERA_PORTS))) + fromInteger(i);
-`ifndef WAIT_FOR_START_SIG
+            `ifndef WAIT_FOR_START_SIG
             start_flag[i] <= 1;
-`endif
+            `endif
         end
     endmethod
 
@@ -946,4 +1058,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 	// interface Get sent_fwd_pkt_res = temp3;
 	// interface Get received_fwd_pkt_res = temp5;
 	// interface Get received_corrupted_pkt_res = temp6;
+/*------------------------------------------------------------------------------*/
+
 endmodule
