@@ -243,7 +243,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // BRAM to store cells to forward.
     // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
     // but then need some way to idx by nbr host_idx. May need to make an interacing module.
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_TOKEN_BUCKETS,
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_FWD_TOKEN_BUCKETS,
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
             fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
                 mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE))))));
@@ -269,8 +269,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 begin
                 rule test_pieo_prep(pieo_init_done[i][j][k] == 0);
                     pieo_init_done[i][j][k] <= 1;
-                    fwd_pieo[i][j][k].reset_queue();
                     $display("pieo reset method called %d %d %d", i,j,k);
+                    fwd_pieo[i][j][k].reset_queue();
                 endrule
             end
         end
@@ -336,7 +336,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 endrule
 
                 // For each neighbor & bucket, if a cell is read, prepare to send it.
-                for(Integer l = 0; l < valueof(NUM_TOKEN_BUCKETS); l = l + 1)
+                for(Integer l = 0; l < valueof(NUM_FWD_TOKEN_BUCKETS); l = l + 1)
                 begin
                     rule get_fwd_cell;
                         let d <- fwd_buffer[i][j][k][l].read_response.get;
@@ -457,14 +457,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         FIFO#(Bit#(BUCKET_IDX_BITS))))) update_tokens_fifo <- replicateM(replicateM(replicateM(mkFIFO))); 
 
     // Matrix to store available tokens per nbr, bucket. Initially,
-    // each bucket has 1 token each.
+    // each bucket has 1 token each. The number of available tokens in
+    // each bucket can never exceed the initial amount!
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         Vector#(NUM_TOKEN_BUCKETS, Reg#(Bit#(TOKEN_COUNT_SIZE)))))) tkn_count 
             <- replicateM(replicateM(replicateM(replicateM(mkReg(1)))));
     // PIEOCurrentTime pieo_current_time_in;
 
     // Module to pick spraying hops.
-    RandomHopGenerator rng_hop <-mkRandomHopGenerator;
+    // RandomHopGenerator rng_hop <-mkRandomHopGenerator;
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
@@ -482,7 +483,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             Integer src_mac_phase_int = 0;
             if (curr_src_mac_phase[i] == 1) src_mac_phase_int = 1;
-            // if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
+            if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
 
             Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
@@ -512,7 +513,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // hard-coded mapping to integer.
                 src_mac_phase_int = 0;
                 if (src_mac_phase == 1) src_mac_phase_int = 1;
-                // if (src_mac_phase == 2) src_mac_phase_int = 2;
+                if (src_mac_phase == 2) src_mac_phase_int = 2;
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;
@@ -651,7 +652,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         // next_hop = schedule_table[i][next_hop_phase][spray_slot];
 
                         // Spray short.
-                        Bit#(64) min_buffer_len = fromInteger(valueof(NUM_TOKEN_BUCKETS));
+                        Bit#(64) min_buffer_len = fromInteger(valueof(CELLS_PER_BUCKET_FWD));
                         Token bucket;
                         bucket.dst_ip = dst_ip;
                         bucket.remaining_spraying_hops = remaining_spraying_hops;
@@ -769,6 +770,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             begin
 
                 (* descending_urgency = "choose_buffer_to_send_from, update_tokens" *)
+                (* descending_urgency = "choose_buffer_to_send_from_2, update_tokens" *)
 
                 // Update flow eligibility for each flow via current neighbor,
                 // based on tokens parsed in receive path.
@@ -779,7 +781,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 rule update_tokens;
                     let tkn_bkt_idx <- toGet(update_tokens_fifo[i][j][k]).get;
                     tkn_count[i][j][k][tkn_bkt_idx] <= tkn_count[i][j][k][tkn_bkt_idx] + 1;
-                    // curr_time_in = curr_time_in | 1 << fromInteger(tkn_bkt_idx);
+                    // pieo_curr_time_in[i][j][k] = pieo_curr_time_in[i][j][k] | 1 << fromInteger(tkn_bkt_idx);
                 endrule
 
                 // To select local flow to send, we want to pick the next flow 
@@ -921,6 +923,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // If FWD/HOST and not sending to final dest, expend a token from relevant bucket.
                     if (bkt_idx != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
                     begin
+                        // if (tkn_count[i][j][k][bkt_idx] == 1)
+                        // begin
+                        //     PIEOCurrentTime mask = '1;
+                        //     mask = mask - (1 << bkt_idx);
+                        //     pieo_curr_time_in[i][j][k] = pieo_curr_time_in[i][j][k] & mask;
+                        // end
                         tkn_count[i][j][k][bkt_idx] <= tkn_count[i][j][k][bkt_idx] - 1;
                         if (verbose)
                             $display("[SCHED %d] Decreasing tokens for bkt %d nbr %d,%d",
