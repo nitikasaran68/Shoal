@@ -242,7 +242,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // BRAM to store cells to forward.
     // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
     // but then need some way to idx by nbr host_idx. May need to make an interacing module.
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_TOKEN_BUCKETS,
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_FWD_TOKEN_BUCKETS,
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
             fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
                 mkRingBuffer(valueof(CELLS_PER_BUCKET_FWD), valueof(CELL_SIZE))))));
@@ -335,7 +335,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 endrule
 
                 // For each neighbor & bucket, if a cell is read, prepare to send it.
-                for(Integer l = 0; l < valueof(NUM_TOKEN_BUCKETS); l = l + 1)
+                for(Integer l = 0; l < valueof(NUM_FWD_TOKEN_BUCKETS); l = l + 1)
                 begin
                     rule get_fwd_cell;
                         let d <- fwd_buffer[i][j][k][l].read_response.get;
@@ -650,15 +650,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         // next_hop = schedule_table[i][next_hop_phase][spray_slot];
 
                         // Spray short.
-                        Bit#(64) min_buffer_len = fromInteger(valueof(NUM_TOKEN_BUCKETS));
+                        Bit#(4) min_buffer_len = fromInteger(valueof(CELLS_PER_BUCKET_FWD));
                         Token bucket;
                         bucket.dst_ip = dst_ip;
                         bucket.remaining_spraying_hops = remaining_spraying_hops;
-                        Bit#(64) bkt_idx = get_fwd_bucket_idx(bucket);
+                        Bit#(BUCKET_IDX_BITS) bkt_idx = get_fwd_bucket_idx(bucket);
                         for(Integer j = 0; j < valueof(PHASE_SIZE); j = j + 1)
                         begin
                             ServerIndex nbr = schedule_table[i][next_hop_phase][j];
-                            Bit#(64) len = fwd_buffer[i][next_hop_phase][j][bkt_idx].elements;
+                            Bit#(4) len = truncate(fwd_buffer[i][next_hop_phase][j][bkt_idx].elements);
                             if(min_buffer_len > len)
                             begin
                                 min_buffer_len = len;
@@ -709,7 +709,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     // we count in received tokens.
                     // TODO: Change to index by outgoing (N,h), and store src_mac,
                     // and recv bucket with the fwd cell or the pieo item!
-                    Bit#(64) bucket_idx;
+                    Bit#(BUCKET_IDX_BITS) bucket_idx;
                     if (dst_ip == next_hop)
                         bucket_idx =  fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
                     else
@@ -733,7 +733,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         // This way we need not call dequeue_f to update eligibility for buckets!
                         //  And we also don't need to re-enqueue buckets.
                         PIEOElement flow;
-                        flow.id = truncate(bucket_idx);
+                        flow.id = bucket_idx;
                         flow.rank = 0;
                         flow.prev_hop_phase = src_mac_phase;
                         flow.prev_hop_slot = get_timeslot_with_matching_coordinate(host_index[i], 
@@ -833,7 +833,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                             // Set number of spray hops in the token sent, based on value recvd from prev hop.
                             tkn.remaining_spraying_hops = x.rem_spraying_hops_recvd;
                             pending_token[i][x.prev_hop_phase][x.prev_hop_slot] 
-                                    <= truncate(get_fwd_bucket_idx(tkn));
+                                    <= get_fwd_bucket_idx(tkn);
                         end
                     end
 
