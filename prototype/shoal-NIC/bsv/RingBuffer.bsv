@@ -17,7 +17,7 @@ interface RingBuffer#(type readReqType, type readResType, type writeReqType);
     method Bool empty();
     method Bool full();
     method Action clear();
-    method Bit#(64) elements();
+    method Bit#(6) elements();
 endinterface
 
 module mkRingBuffer#(Integer buffer_size, Integer cell_size)
@@ -41,8 +41,8 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
 /*-------------------------------------------------------------------------------*/
     Integer cell_size_pow_of_2 = log2(cell_size);
 
-    Reg#(Bit#(64)) head <- mkReg(0);
-    Reg#(Bit#(64)) tail <- mkReg(0);
+    Reg#(Bit#(6)) head <- mkReg(0);
+    Reg#(Bit#(6)) tail <- mkReg(0);
 
     Bool is_empty = (head == tail);
     Bool is_full = (head == tail + fromInteger(buffer_size));
@@ -68,7 +68,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
             write_flag = False;
             w_offset <= 1;
             length <= fromInteger(valueof(BUS_WIDTH));
-            Address addr = ((truncate(head) & (fromInteger(buffer_size)-1))
+            Address addr = ((extend(head) & (fromInteger(buffer_size)-1))
                      << fromInteger(cell_size_pow_of_2));
             ring_buffer.portA.request.put(makeBRAMDataRequest(True, addr,
                                                     w_req.data.payload));
@@ -110,7 +110,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
             if (cell_size == valueof(BUS_WIDTH))
             begin
                 head <= head + 1;
-                Address addr = ((truncate(head) & (fromInteger(buffer_size)-1))
+                Address addr = ((extend(head) & (fromInteger(buffer_size)-1))
                          << fromInteger(cell_size_pow_of_2));
                 ring_buffer.portA.request.put(makeBRAMDataRequest(True, addr,
                                                         w_req.data.payload));
@@ -119,7 +119,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
 
         if (write_flag == True)
         begin
-            Address addr = ((truncate(head) & (fromInteger(buffer_size)-1))
+            Address addr = ((extend(head) & (fromInteger(buffer_size)-1))
                          << fromInteger(cell_size_pow_of_2))
                          + (w_offset << fromInteger(valueof(BUS_WIDTH_POW_OF_2)));
             ring_buffer.portA.request.put(makeBRAMDataRequest(True, addr,
@@ -155,7 +155,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
     endrule
 
     rule read_data_req (r_offset < r_max_offset);
-        Address addr = ((truncate(tail) & (fromInteger(buffer_size)-1))
+        Address addr = ((extend(tail) & (fromInteger(buffer_size)-1))
                      << fromInteger(cell_size_pow_of_2))
                      + (r_offset << fromInteger(valueof(BUS_WIDTH_POW_OF_2)));
         ring_buffer.portB.request.put(makeBRAMDataRequest(False, addr, 0));
@@ -230,7 +230,7 @@ module mkRingBuffer#(Integer buffer_size, Integer cell_size)
         tail <= 0;
     endmethod
 
-    method Bit#(64) elements();
+    method Bit#(6) elements();
         return (head - tail);
     endmethod
 

@@ -6,7 +6,6 @@ import GetPut::*;
 import Clocks::*;
 import DefaultValue::*;
 
-import Params::*;
 import ShaleUtil::*;
 import RingBufferTypes::*;
 

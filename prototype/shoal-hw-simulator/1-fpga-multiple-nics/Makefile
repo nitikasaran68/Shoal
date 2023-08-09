@@ -21,7 +21,7 @@ CONNECTALFLAGS += -D NIC_SIM
 CONNECTALFLAGS += -D MULTI_NIC
 #CONNECTALFLAGS += -D SHOAL
 
-CONNECTALFLAGS += --bscflags="-show-schedule -show-range-conflict +RTS -K93554432 -RTS -demote-errors G0066:G0045 -suppress-warnings G0046:G0020:S0015:S0080:S0039 -steps-max-intervals 20"
+CONNECTALFLAGS += --bscflags="-show-schedule -u -show-range-conflict +RTS -K93554432 -RTS -demote-errors G0066:G0045 -suppress-warnings G0046:G0020:S0015:S0080:S0039 -steps-max-intervals 20"
 
 #ifeq ($(BOARD), vsim)
 CONNECTALFLAGS += --verilog $(IPDIR)/$(BOARD)/simulation/mac_10gbe

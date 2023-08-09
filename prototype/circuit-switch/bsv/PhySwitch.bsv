@@ -8,7 +8,6 @@ import DefaultValue::*;
 
 `include "ConnectalProjectConfig.bsv"
 
-import SwParams::*;
 import ShaleUtil::*;
 
 import AlteraMacWrap::*;

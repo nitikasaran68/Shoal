@@ -7,7 +7,6 @@ import Connectable::*;
 import DefaultValue::*;
 import Clocks::*;
 
-import Params::*;
 import ShaleUtil::*;
 import CellGenerator::*;
 import Mac::*;

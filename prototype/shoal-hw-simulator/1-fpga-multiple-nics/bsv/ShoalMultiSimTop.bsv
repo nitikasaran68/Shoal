@@ -9,8 +9,6 @@ import Clocks::*;
 
 `include "ConnectalProjectConfig.bsv"
 
-import Params::*;
-import SwParams::*;
 import ShaleUtil::*;
 `ifndef CW_PHY_SIM
 import MacSwitch::*;
@@ -343,25 +341,24 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
     Reg#(Bit#(1)) wait_for_100_cycles <- mkReg(0, clocked_by txClock, reset_by txReset);
     Reg#(Bit#(64)) wait_counter <- mkReg(0, clocked_by txClock, reset_by txReset);
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule start_shoal (host_index_ready == 1
-                        && rate_ready == 1
-                        && timeslot_ready == 1);
-            // TODO: In Shoal, WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
-            if (rate != 0)
-                cg[i].start(fromInteger(i), rate);
-
-            if (i == 0)
+    rule start_shoal (host_index_ready == 1
+                    && rate_ready == 1
+                    && timeslot_ready == 1);
+        // TODO: In Shoal, WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
+        if (rate != 0)
+        begin
+            for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
             begin
-                wait_for_100_cycles <= 1;
-                /* reset the state */
-                host_index_ready <= 0;
-                rate_ready <= 0;
-                timeslot_ready <= 0;
+                cg[i].start(fromInteger(i), rate);
             end
-        endrule
-    end
+        end
+
+        wait_for_100_cycles <= 1;
+        /* reset the state */
+        host_index_ready <= 0;
+        rate_ready <= 0;
+        timeslot_ready <= 0;
+    endrule
 
     rule wait_for_100_cycles_rule (wait_for_100_cycles == 1);
         if (wait_counter == 100)

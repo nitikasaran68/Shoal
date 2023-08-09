@@ -4,6 +4,8 @@
 package pieo_datatypes;
 
 parameter LIST_SIZE = 9;
+parameter NUM_OF_ELEMENTS_PER_SUBLIST = 2; //sqrt(LIST_SIZE)
+parameter NUM_OF_SUBLIST = (2*2); //2*NUM_OF_ELEMENTS_PER_SUBLIST
 
 // Bits to store bucket ID (send_time)
 parameter ID_LOG = 4;
@@ -25,9 +27,6 @@ parameter TIME_LOG = 6;
 // be later in sorted order than any inserted element.
 // Numerically equal to the num of fwd token buckets.
 parameter NULL_BUCKET = 5;
-
-parameter NUM_OF_ELEMENTS_PER_SUBLIST = 3; //sqrt(LIST_SIZE)
-parameter NUM_OF_SUBLIST = (2*3); //2*NUM_OF_ELEMENTS_PER_SUBLIST
 
 typedef struct packed
 {

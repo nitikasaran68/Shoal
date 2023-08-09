@@ -1,5 +1,6 @@
-`include "ConnectalProjectConfig.bsv"
 import ShaleUtil::*;
+
+`include "ConnectalProjectConfig.bsv"
 
 typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 
@@ -14,4 +15,6 @@ typedef 1 NUM_OF_ALTERA_PORTS;
 // The number of bits = num of token buckets.
 typedef Bit#(NUM_FWD_TOKEN_BUCKETS) PIEOCurrentTime;
 
-typedef 2 TOKEN_COUNT_SIZE;
+// Bits to store initial num of tokens per bucket, which is also the 
+// max num of tokens per bucket for any node at any given time.
+typedef 1 TOKEN_COUNT_SIZE;

@@ -9,7 +9,6 @@ import DefaultValue::*;
 import Clocks::*;
 import PIEOQueue::*;
 
-import Params::*;
 import ShaleUtil::*;
 import SchedulerTypes::*;
 import RingBufferTypes::*;
@@ -170,7 +169,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         current_timeslot <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Phase))
         current_phase <- replicateM(mkReg(0));
-    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(7)))
         current_epoch <- replicateM(mkReg(0));
 
     // Tx neighbor.
@@ -464,7 +463,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     // PIEOCurrentTime pieo_current_time_in;
 
     // Module to pick spraying hops.
-    RandomHopGenerator rng_hop <-mkRandomHopGenerator;
+    // RandomHopGenerator rng_hop <-mkRandomHopGenerator;
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
@@ -482,7 +481,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             Integer src_mac_phase_int = 0;
             if (curr_src_mac_phase[i] == 1) src_mac_phase_int = 1;
-            // if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
+            if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
 
             Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
@@ -512,7 +511,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // hard-coded mapping to integer.
                 src_mac_phase_int = 0;
                 if (src_mac_phase == 1) src_mac_phase_int = 1;
-                // if (src_mac_phase == 2) src_mac_phase_int = 2;
+                if (src_mac_phase == 2) src_mac_phase_int = 2;
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;

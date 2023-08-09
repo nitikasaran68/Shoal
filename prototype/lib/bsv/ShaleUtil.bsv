@@ -6,6 +6,8 @@ import FIFO::*;
 import GetPut::*;
 import DefaultValue::*;
 
+`include "ConnectalProjectConfig.bsv"
+
 // NOTE: If you change these, Header might change as well.
 typedef 4 NUM_OF_SERVERS;       // N
 typedef 2 NUM_OF_PHASES;        // h
@@ -29,10 +31,32 @@ typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
 typedef 5 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
 typedef 0 FINAL_DST_BUCKET_IDX;              // 0 
-typedef 4 BUCKET_IDX_BITS;
+typedef 4 BUCKET_IDX_BITS;                   // clog2(NUM_TOKEN_BUCKETS)
 typedef 2 CELLS_PER_BUCKET_HOST;
 typedef 1 CELLS_PER_BUCKET_FWD;
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
+
+typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
+
+typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
+
+`ifdef MULTI_NIC
+typedef NUM_OF_SERVERS NUM_OF_ALTERA_PORTS;
+`else
+typedef 1 NUM_OF_ALTERA_PORTS;
+`endif
+
+typedef NUM_OF_SERVERS NUM_OF_SWITCH_PORTS;
+typedef Bit#(9) PortIndex;
+
+// The current time input given to PIEO while dequeuing
+// will be a bitmap for all buckets to mark eligibility.
+// The number of bits = num of token buckets.
+typedef Bit#(NUM_FWD_TOKEN_BUCKETS) PIEOCurrentTime;
+
+// Bits to store initial num of tokens per bucket, which is also the 
+// max num of tokens per bucket for any node at any given time.
+typedef 1 TOKEN_COUNT_SIZE;
 
 // But this doesn't have all the fields mentioned in Shoal paper?!
 // NOTE: If you change header format, also change offset values used in Scheduler.
@@ -155,7 +179,6 @@ function Coordinate get_timeslot_with_matching_coordinate(ServerIndex node, Coor
 
 endfunction
 
-typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
 
 // Get index in fwd buffer from the bucket containing the 
@@ -166,13 +189,13 @@ typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in Rin
 // we mark the final dest bucket as idx 0.
 // TODO: For each node x, the buckets with final destination x
 // will never be occupied, so we can optimize storage accordingly.
-function Bit#(64) get_fwd_bucket_idx(Token tkn);
+function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_idx(Token tkn);
     let d = tkn.dst_ip;     // dest idx: 0 to N-1
     let h = tkn.remaining_spraying_hops;
     // For each dst, spray hops can be from 0 to H-1. 
     // H remaining spray hops implies a local flow.
-    Bit#(64) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
-    get_fwd_bucket_idx = idx + extend(d) + 1;
+    Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
+    get_fwd_bucket_idx = idx + truncate(d) + 1;
 endfunction
 
 function Token get_token_from_bucket_idx(Bit#(BUCKET_IDX_BITS) bucket_idx);

@@ -7,7 +7,6 @@ import GetPut::*;
 import Clocks::*;
 import Real::*;
 
-import Params::*;
 import ShaleUtil::*;
 import RingBufferTypes::*;
 import RingBuffer::*;
@@ -176,44 +175,28 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
         return round(z);
     endfunction
 
-    // Why do we have these cases?? Why can't we convert rate_reg to input for cycles_to_wait?
 	Reg#(Bit#(1)) rate_set_flag <- mkReg(0);
 	rule decodeRate (rate_set_flag == 1);
-		case (rate_reg)
-			10      : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(10));
-				      end
-			9       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(9));
-				      end
-			8       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(8));
-				      end
-			7       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(7));
-				      end
-			6       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(6));
-				      end
-			5       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(5));
-				      end
-			4       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(4));
-				      end
-			3       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(3));
-				      end
-			2       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(2));
-				      end
-			1       : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(1));
-				      end
-			default : begin
-					  num_of_cycles_to_wait <= fromInteger(cycles_to_wait(10));
-				      end
+        // It is perhaps more efficient to do cases than a for loop
+        // because the compilation might turn this into a lookup table.
+        // TODO: Verify.
+        Integer rate = 10;          // default rate is 10 bits/ns
+        case (rate_reg)
+			10      : rate = 10;
+			9       : rate = 9;
+			8       : rate = 8;
+			7       : rate = 7;
+			6       : rate = 6;
+			5       : rate = 5;
+			4       : rate = 4;
+			3       : rate = 3;
+			2       : rate = 2;
+			1       : rate = 1;
+			default : rate = 10;
 		endcase
+        Integer cycles_to_wait_ret = cycles_to_wait(rate);
+        $display("[DMA %d] Cycles to wait is %d", host_index, cycles_to_wait_ret);
+        num_of_cycles_to_wait <= fromInteger(cycles_to_wait_ret);
 		start_flag <= 1;
 		rate_set_flag <= 0;
 	endrule
