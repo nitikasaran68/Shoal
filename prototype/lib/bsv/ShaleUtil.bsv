@@ -20,6 +20,13 @@ typedef Bit#(3) Phase;          // >= 1 + ceil(log_2(NUM_OF_PHASES)) bits to sto
 
 typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
+`ifdef MULTI_NIC
+typedef 8 NUM_OF_ALTERA_PORTS;
+`else
+typedef 1 NUM_OF_ALTERA_PORTS;
+`endif
+typedef 8 NUM_OF_SWITCH_PORTS;
+typedef Bit#(9) PortIndex;
 
 // Each (dst, spray_hops) bucket can have one pkt per node.
 // In the fwd_buffer, we store cells by their send bucket -
@@ -40,14 +47,6 @@ typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in Rin
 
 typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 
-`ifdef MULTI_NIC
-typedef NUM_OF_SERVERS NUM_OF_ALTERA_PORTS;
-`else
-typedef 1 NUM_OF_ALTERA_PORTS;
-`endif
-
-typedef NUM_OF_SERVERS NUM_OF_SWITCH_PORTS;
-typedef Bit#(9) PortIndex;
 
 // The current time input given to PIEO while dequeuing
 // will be a bitmap for all buckets to mark eligibility.

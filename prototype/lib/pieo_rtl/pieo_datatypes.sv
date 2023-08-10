@@ -3,7 +3,7 @@
 
 package pieo_datatypes;
 
-parameter LIST_SIZE = 9;
+parameter LIST_SIZE = 4;
 parameter NUM_OF_ELEMENTS_PER_SUBLIST = 2; //sqrt(LIST_SIZE)
 parameter NUM_OF_SUBLIST = (2*2); //2*NUM_OF_ELEMENTS_PER_SUBLIST
 

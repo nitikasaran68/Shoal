@@ -239,9 +239,10 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
 /*------------------------------------------------------------------------------*/
 
-    // BRAM to store cells to forward.
-    // TODO: Don't need N fwd buffers per port, only EPOCH_SIZE.
-    // but then need some way to idx by nbr host_idx. May need to make an interacing module.
+    // BRAM to store cells to forward. 
+    // DEBUG for 8 nodes, 3 phases (without instantiating PIEO queues)
+    // --works with 2,8,10 buckets does not work with 17
+    //  --with 12 scheduler starts but cell generator doesn't??? how???
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, Vector#(NUM_FWD_TOKEN_BUCKETS,
         RingBuffer#(ReadReqType, ReadResType, WriteReqType)))))
             fwd_buffer <- replicateM(replicateM(replicateM(replicateM(
@@ -249,6 +250,13 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
         total_fwd_buffer_len <- replicateM(mkReg(0));
 
+    // DEBUG for 8 nodes, 3 phases (with PIEO queues of list_size=4)
+    // -- doesn't work with 2, 10 buckets in fwd_buffer
+    // But does work if there is a single instance of pieo (not 8*3*bkts, just 1)
+    // Also works for 8 * 1 * 1 fwd_pieo when fwd_buffer is commented out.
+    // For 8*3*1 - scheduler starts but cell generator doesn't!
+    // EVEN STRANGER: when I reduce to a single CellGen buffer and keep
+    // 8*3*1, Scheduler doesn't start either! No consistent trends!!
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         PIEOQueue))) fwd_pieo <- replicateM(replicateM(replicateM(mkPIEOQueue)));
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
