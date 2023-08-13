@@ -487,9 +487,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             Phase remaining_spraying_hops = curr_remaining_spray_hops[i];
             Bit#(1) dummy_bit = curr_dummy_bit[i];
 
-            Integer src_mac_phase_int = 0;
-            if (curr_src_mac_phase[i] == 1) src_mac_phase_int = 1;
-            if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
+            Integer src_mac_phase_int = phase_to_int(curr_src_mac_phase[i]);
 
             Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
@@ -516,10 +514,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 remaining_spraying_hops = hd[valueof(HDR_SPRAY_HOPS_S):valueof(HDR_SPRAY_HOPS_E)];
                 dummy_bit = hd[valueof(HDR_DUMMY_BIT)];
 
-                // hard-coded mapping to integer.
-                src_mac_phase_int = 0;
-                if (src_mac_phase == 1) src_mac_phase_int = 1;
-                if (src_mac_phase == 2) src_mac_phase_int = 2;
+                src_mac_phase_int = phase_to_int(src_mac_phase);
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;

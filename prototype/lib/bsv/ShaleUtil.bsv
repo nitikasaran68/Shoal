@@ -206,6 +206,14 @@ function Token get_token_from_bucket_idx(Bit#(BUCKET_IDX_BITS) bucket_idx);
     get_token_from_bucket_idx = tkn;
 endfunction
 
+function Integer phase_to_int(Phase p);
+    Integer phase_int = 0;
+    if (valueof(NUM_OF_PHASES) > 1 && p == 1) phase_int = 1;
+    if (valueof(NUM_OF_PHASES) > 2 && p == 2) phase_int = 2;
+    if (valueof(NUM_OF_PHASES) > 3 && p == 3) phase_int = 3;
+    phase_to_int = phase_int;
+endfunction
+
 // Module to pick a spraying hop at random, using the LFSR modules.
 // Adapted from example on page 308 of BSV ref guide.
 // We want 6-bit random numbers, so we will use the 16-bit version of
