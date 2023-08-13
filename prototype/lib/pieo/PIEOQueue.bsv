@@ -12,12 +12,13 @@ import ShaleUtil::*;
 // typedef 3 TIMESLOT_LOG;
 typedef 4 RANK_LOG;                 // bits to store flow rank
 typedef 6 TIME_LOG;                 // bits to store flow send time: number of fwd buckets + 1
-typedef 17 PIEO_ELEMENT_BITS;       // bits to store a flow in PIEO
+typedef 18 PIEO_ELEMENT_BITS;       // bits to store a flow in PIEO
 typedef 31 PIEO_NULL_ID;            // 2**ID_LOG - 1
 // typedef 4 NUM_OF_SUBLIST;        // 2 * root( PIEO_LIST_SIZE)
 // typedef 2 CLOG2_NUM_OF_SUBLIST;     // clog2(NUM_OF_SUBLIST)
 
 // Struct enqueued and dequeued from PIEO.
+// TODO: Is there any way to shorten this?
 typedef struct
 {
     Phase    prev_hop_phase;                // For FWD cells, hop this cell was recvd from.
@@ -25,6 +26,7 @@ typedef struct
     Bit#(RANK_LOG)  rank;                   // init with infinity
     Bit#(BUCKET_IDX_BITS)  id;
     Phase rem_spraying_hops_recvd;
+    Bit#(1) is_spray;
 } PIEOElement deriving(Bits, Eq);
 
 

@@ -28,19 +28,19 @@ typedef 1 NUM_OF_ALTERA_PORTS;
 typedef 8 NUM_OF_SWITCH_PORTS;
 typedef Bit#(9) PortIndex;
 
-// Each (dst, spray_hops) bucket can have one pkt per node.
-// In the fwd_buffer, we store cells by their send bucket -
-// that is, the number of spray hops is the remaining number
+// In the fwd_buffer, we store cells by phase and send bucket -
+// the number of spray hops is the remaining number
 // once we forward the packet. Since, we will never receive a
 // cell with remaining spray hops > h-1, our fwd buffer will have
 // cells with spray hops in [0, h-2].
 // NOTE: If this changes, we also need to change PIEO datatypes.
 typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
 typedef 5 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
-typedef 0 FINAL_DST_BUCKET_IDX;              // 0 
-typedef 4 BUCKET_IDX_BITS;                   // clog2(NUM_TOKEN_BUCKETS)
+typedef 5 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)
+typedef 0 FINAL_DST_BUCKET_IDX;             // 0 
+typedef 4 BUCKET_IDX_BITS;
 typedef 2 CELLS_PER_BUCKET_HOST;
-typedef 1 CELLS_PER_BUCKET_FWD;
+typedef 1 CELLS_PER_BUCKET_PER_PHASE_FWD;   // Number of cells per bkt per outgoing phase
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
 
 typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
@@ -188,13 +188,33 @@ endfunction
 // we mark the final dest bucket as idx 0.
 // TODO: For each node x, the buckets with final destination x
 // will never be occupied, so we can optimize storage accordingly.
-function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_idx(Token tkn);
+function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_from_tkn(Token tkn);
     let d = tkn.dst_ip;     // dest idx: 0 to N-1
     let h = tkn.remaining_spraying_hops;
     // For each dst, spray hops can be from 0 to H-1. 
     // H remaining spray hops implies a local flow.
     Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
+    get_fwd_bucket_from_tkn = idx + extend(d) + 1;
+endfunction
+
+function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_idx(ServerIndex d, Phase h);
+    // For each dst, spray hops can be from 0 to H-1. 
+    // H remaining spray hops implies a local flow.
+    Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
     get_fwd_bucket_idx = idx + truncate(d) + 1;
+endfunction
+
+function Bit#(BUCKET_IDX_BITS) get_direct_buffer_idx(ServerIndex d);
+    get_direct_buffer_idx = truncate(d) + 1;
+endfunction
+
+function Bit#(BUCKET_IDX_BITS) get_direct_buffer_idx_from_bucket(
+                                            Bit#(BUCKET_IDX_BITS) bkt);
+    if (bkt == fromInteger(valueOf(FINAL_DST_BUCKET_IDX)))
+        get_direct_buffer_idx_from_bucket = bkt;
+    else
+        get_direct_buffer_idx_from_bucket =
+            ((bkt - 1) % fromInteger(valueof(NUM_OF_SERVERS))) + 1;
 endfunction
 
 function Token get_token_from_bucket_idx(Bit#(BUCKET_IDX_BITS) bucket_idx);
