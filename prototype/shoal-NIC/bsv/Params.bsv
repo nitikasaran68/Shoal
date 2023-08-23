@@ -12,6 +12,10 @@ typedef 1 NUM_OF_ALTERA_PORTS;
 // The current time input given to PIEO while dequeuing
 // will be a bitmap for all buckets to mark eligibility.
 // The number of bits = num of token buckets.
+`ifdef LIMIT_ACTIVE_BUCKETS
+typedef Bit#(NUM_ACTIVE_BUCKETS) PIEOCurrentTime;
+`else
 typedef Bit#(NUM_FWD_TOKEN_BUCKETS) PIEOCurrentTime;
+`endif
 
 typedef 2 TOKEN_COUNT_SIZE;

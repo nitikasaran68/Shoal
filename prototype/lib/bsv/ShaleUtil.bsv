@@ -6,6 +6,8 @@ import FIFO::*;
 import GetPut::*;
 import DefaultValue::*;
 
+`include "ConnectalProjectConfig.bsv"
+
 // NOTE: If you change these, Header might change as well.
 typedef 4 NUM_OF_SERVERS;       // N
 typedef 2 NUM_OF_PHASES;        // h
@@ -26,8 +28,14 @@ typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 // cells with spray hops in [0, h-2].
 // NOTE: If this changes, we also need to change PIEO datatypes.
 typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
+`ifdef LIMIT_ACTIVE_BUCKETS
+typedef 5 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
+typedef 30 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
+`else
 typedef 5 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
 typedef 5 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)
+// TODO: define null bkt address, add comments, rename data structures.
+`endif
 typedef 0 FINAL_DST_BUCKET_IDX;             // 0 
 typedef 4 BUCKET_IDX_BITS;
 typedef 2 CELLS_PER_BUCKET_HOST;
@@ -101,13 +109,11 @@ instance DefaultValue#(Token);
     };
 endinstance
 
-// Phases are numberd from left-most coordinate (most significant) to right most coordinate.
-// So, phase i relates to coordinate i, which is the co-efficient for the (h-i-1)th power of N**1/h. 
-// TODO: This is in the opposite order of what Daniel does in simulator. We might change for consistency. 
+// Phases are numberd from right-most coordinate (least significant) to left most coordinate.
+// So, phase i relates to coordinate i, which is the co-efficient for the i-th power of N**1/h. 
 // TODO: Implement lookup table for powers?
 function Coordinate get_coordinate(ServerIndex node, Integer phase);
-    Integer x = (valueof(NUM_OF_PHASES) - phase) - 1;  // h - phase_num - 1.
-    Integer div = valueof(NODES_PER_PHASE) ** x;       // (N ** x/h)
+    Integer div = valueof(NODES_PER_PHASE) ** phase;       // (N ** x/h)
     get_coordinate = truncate( (node / fromInteger(div)) % fromInteger(valueof(NODES_PER_PHASE)) );
 endfunction
 
@@ -115,17 +121,16 @@ endfunction
 function ServerIndex offset_node_in_phase(ServerIndex node, Integer phase, Integer offset);
     Coordinate c = get_coordinate(node, phase);
     Coordinate offset_c = (c + fromInteger(offset)) % fromInteger(valueof(NODES_PER_PHASE));
-    Integer x = (valueof(NUM_OF_PHASES) - phase) - 1;  // h - phase_num - 1
     // The offset node ID could be greater or less than this node. Handle sign for diff. 
     if (offset_c < c) 
     begin
         ServerIndex diff = extend(c - offset_c);
-        offset_node_in_phase = node - (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        offset_node_in_phase = node - (diff * fromInteger(valueof(NODES_PER_PHASE) ** phase));
     end
     else
     begin
         ServerIndex diff = extend(offset_c - c);
-        offset_node_in_phase = node + (diff * fromInteger(valueof(NODES_PER_PHASE) ** x));
+        offset_node_in_phase = node + (diff * fromInteger(valueof(NODES_PER_PHASE) ** phase));
     end
 endfunction
 
