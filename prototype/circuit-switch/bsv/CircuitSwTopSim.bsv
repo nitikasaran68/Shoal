@@ -8,7 +8,7 @@ import Clocks::*;
 
 `include "ConnectalProjectConfig.bsv"
 
-import SwParams::*;
+import ShaleUtil::*;
 `ifdef PHY_SW
 import PhySwitch::*;
 `endif

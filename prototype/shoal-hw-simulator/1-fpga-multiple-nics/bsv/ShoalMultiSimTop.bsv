@@ -9,8 +9,6 @@ import Clocks::*;
 
 `include "ConnectalProjectConfig.bsv"
 
-import Params::*;
-import SwParams::*;
 import ShaleUtil::*;
 `ifndef CW_PHY_SIM
 import MacSwitch::*;
@@ -132,28 +130,28 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 
     /* Reset signals and module initialization */
 
-    MakeResetIfc tx_reset_ifc <- mkResetSync(0, False, defaultClock);
-    Reset tx_rst_sig <- mkAsyncReset(0, tx_reset_ifc.new_rst, txClock);
-    Reset tx_rst <- mkResetEither(txReset, tx_rst_sig, clocked_by txClock);
+    // MakeResetIfc tx_reset_ifc <- mkResetSync(0, False, defaultClock);
+    // Reset tx_rst_sig <- mkAsyncReset(0, tx_reset_ifc.new_rst, txClock);
+    // Reset txReset <- mkResetEither(txReset, tx_rst_sig, clocked_by txClock);
 
-    MakeResetIfc rx_reset_ifc <- mkResetSync(0, False, defaultClock);
-    Reset rx_rst_sig <- mkAsyncReset(0, rx_reset_ifc.new_rst, rxClock);
-    Reset rx_rst <- mkResetEither(rxReset, rx_rst_sig, clocked_by rxClock);
+    // MakeResetIfc rx_reset_ifc <- mkResetSync(0, False, defaultClock);
+    // Reset rx_rst_sig <- mkAsyncReset(0, rx_reset_ifc.new_rst, rxClock);
+    // Reset rxReset <- mkResetEither(rxReset, rx_rst_sig, clocked_by rxClock);
 
 `ifndef CW_PHY_SIM
-    MacSwitch sw <- mkMacSwitch(txClock, txReset, tx_rst, rxClock, rxReset, rx_rst);
+    MacSwitch sw <- mkMacSwitch(txClock, txReset, txReset, rxClock, rxReset, rxReset);
 `else
-    PhySwitch sw <- mkPhySwitch(txClock, txReset, tx_rst, rxClock, rxReset, rx_rst);
+    PhySwitch sw <- mkPhySwitch(txClock, txReset, txReset, rxClock, rxReset, rxReset);
 `endif
 
-    Mac mac <- mkMac(0, txClock, txReset, tx_rst, rxClock, rxReset, rx_rst);
+    Mac mac <- mkMac(0, txClock, txReset, txReset, rxClock, rxReset, rxReset);
 
     Vector#(NUM_OF_ALTERA_PORTS, CellGenerator)
         cg <- replicateM(mkCellGenerator(valueOf(CELL_SIZE)),
-            clocked_by txClock, reset_by tx_rst);
+            clocked_by txClock, reset_by txReset);
 
     Scheduler scheduler <- mkScheduler(mac, cg, defaultClock, defaultReset,
-            clocked_by txClock, reset_by tx_rst);
+            clocked_by txClock, reset_by txReset);
 
 /*-------------------------------------------------------------------------------*/
 
@@ -343,25 +341,24 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
     Reg#(Bit#(1)) wait_for_100_cycles <- mkReg(0, clocked_by txClock, reset_by txReset);
     Reg#(Bit#(64)) wait_counter <- mkReg(0, clocked_by txClock, reset_by txReset);
 
-    for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
-    begin
-        rule start_shoal (host_index_ready == 1
-                        && rate_ready == 1
-                        && timeslot_ready == 1);
-            // TODO: In Shoal, WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
-            if (rate != 0)
-                cg[i].start(fromInteger(i), rate);
-
-            if (i == 0)
+    rule start_shoal (host_index_ready == 1
+                    && rate_ready == 1
+                    && timeslot_ready == 1);
+        // TODO: In Shoal, WHY ARE WE ONLY STARTING THE CELL GENERATOR FOR idx=0 ?
+        if (rate != 0)
+        begin
+            for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
             begin
-                wait_for_100_cycles <= 1;
-                /* reset the state */
-                host_index_ready <= 0;
-                rate_ready <= 0;
-                timeslot_ready <= 0;
+                cg[i].start(fromInteger(i), rate);
             end
-        endrule
-    end
+        end
+
+        wait_for_100_cycles <= 1;
+        /* reset the state */
+        host_index_ready <= 0;
+        rate_ready <= 0;
+        timeslot_ready <= 0;
+    endrule
 
     rule wait_for_100_cycles_rule (wait_for_100_cycles == 1);
         if (wait_counter == 100)
@@ -385,32 +382,32 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
 *                   Simulating connection wires via SyncFIFOs */
 /* ------------------------------------------------------------------------------*/
 
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s0 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s1 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s2 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s3 <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s0_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s1_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s2_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
-    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s3_sw <- mkSyncFIFO(16, txClock, tx_rst, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s0 <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s1 <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s2 <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_sw_s3 <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s0_sw <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s1_sw <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s2_sw <- mkSyncFIFO(16, txClock, txReset, rxClock);
+    // SyncFIFOIfc#(Bit#(72)) wire_fifo_s3_sw <- mkSyncFIFO(16, txClock, txReset, rxClock);
     Vector#(NUM_OF_SWITCH_PORTS, SyncFIFOIfc#(Bit#(72))) wire_fifo_sw_to_node
-         <- replicateM(mkSyncFIFO(16, txClock, tx_rst, rxClock));
+         <- replicateM(mkSyncFIFO(16, txClock, txReset, rxClock));
     Vector#(NUM_OF_SWITCH_PORTS, SyncFIFOIfc#(Bit#(72))) wire_fifo_node_to_sw
-         <- replicateM(mkSyncFIFO(16, txClock, tx_rst, rxClock));
+         <- replicateM(mkSyncFIFO(16, txClock, txReset, rxClock));
 
     // For each NIC, simulate a delay of 100 from NIC to switch
     // TODO: But weirdly not the other way around?
     Integer delay = 1;
     // Vector#(1, FIFO#(Bit#(72))) fifo_s0_sw
-    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by txReset));
     // Vector#(1, FIFO#(Bit#(72))) fifo_s1_sw
-    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by txReset));
     // Vector#(1, FIFO#(Bit#(72))) fifo_s2_sw
-    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by txReset));
     // Vector#(1, FIFO#(Bit#(72))) fifo_s3_sw
-    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst));
+    //     <- replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by txReset));
     Vector#(NUM_OF_SWITCH_PORTS, Vector#(1, FIFO#(Bit#(72)))) fifo_node_to_sw
-        <- replicateM(replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by tx_rst)));
+        <- replicateM(replicateM(mkSizedFIFO(2, clocked_by txClock, reset_by txReset)));
 
     // rule tx_rule_s0_sw;
     //     let v = mac.tx(0);
@@ -1109,8 +1106,8 @@ module mkShoalMultiSimTop#(ShoalMultiSimTopIndication indication)
     Reg#(Bit#(64)) timeslot_val <- mkReg(0);
 
 	rule reset_state (fire_reset_state == 1);
-		tx_reset_ifc.assertReset;
-        rx_reset_ifc.assertReset;
+		// tx_reset_ifc.assertReset;
+        // rx_reset_ifc.assertReset;
 		reset_len_count <= reset_len_count + 1;
 		if (reset_len_count == 1000)
 		begin

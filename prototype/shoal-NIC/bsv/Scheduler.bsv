@@ -9,7 +9,6 @@ import DefaultValue::*;
 import Clocks::*;
 import PIEOQueue::*;
 
-import Params::*;
 import ShaleUtil::*;
 import SchedulerTypes::*;
 import RingBufferTypes::*;
@@ -115,7 +114,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             end
 
             // Init round robin for local flows to send.
-            next_local_flow_idx[i] <= fromInteger((i + 1) % valueof(NUM_OF_SERVERS));
+            next_local_flow_idx[i] <= (host_index[i] + 1) % fromInteger(valueof(NUM_OF_SERVERS));
 
             // Init token bitmap
             `ifdef LIMIT_ACTIVE_BUCKETS
@@ -185,7 +184,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         current_timeslot <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Phase))
         current_phase <- replicateM(mkReg(0));
-    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(64)))
+    Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(7)))
         current_epoch <- replicateM(mkReg(0));
 
     // Tx neighbor.
@@ -257,6 +256,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
     // BRAM to store cells to forward.
     // Store fwd cells by phase instead of nbr.
+
     `ifdef LIMIT_ACTIVE_BUCKETS
         // bitmap to store which bucket indices are free.
         Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(NUM_ACTIVE_BUCKETS)))
@@ -266,44 +266,72 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             num_pending_pkts <- replicateM(replicateM(mkReg(0)));
         Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_ACTIVE_BUCKETS, Reg#(Bit#(4)))) 
             num_pending_tokens <- replicateM(replicateM(mkReg(0)));
+    `endif
 
-        // TODO: max token constant instead of 1.
-        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
-            Vector#(NUM_ACTIVE_BUCKETS, Reg#(Bit#(TOKEN_COUNT_SIZE)))))) tkn_count 
-                <- replicateM(replicateM(replicateM(replicateM(mkReg(1)))));
-
-        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(NUM_ACTIVE_BUCKETS,
+    `ifndef DEBUG_WITHOUT_BUFFERS
+        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(
+            `ifdef LIMIT_ACTIVE_BUCKETS
+                NUM_ACTIVE_BUCKETS,
+            `else
+                NUM_FWD_TOKEN_BUCKETS,
+            `endif
             RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
                 spray_buffer <- replicateM(replicateM(replicateM(
                     mkRingBuffer(valueof(PHASE_SIZE), valueof(CELL_SIZE)))));
 
-        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(NUM_ACTIVE_BUCKETS,
+        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(
+            `ifdef LIMIT_ACTIVE_BUCKETS
+                NUM_ACTIVE_BUCKETS,
+            `else
+                NUM_DIRECT_TOKEN_BUCKETS,
+            `endif
             RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
                 fwd_buffer <- replicateM(replicateM(replicateM(
                     mkRingBuffer(valueof(PHASE_SIZE), valueof(CELL_SIZE)))));
     `else
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(NUM_FWD_TOKEN_BUCKETS,
-        RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
-            spray_buffer <- replicateM(replicateM(replicateM(
-                mkRingBuffer(valueof(CELLS_PER_BUCKET_PER_PHASE_FWD), valueof(CELL_SIZE)))));
+        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(
+            `ifdef LIMIT_ACTIVE_BUCKETS
+                NUM_ACTIVE_BUCKETS,
+            `else
+                NUM_FWD_TOKEN_BUCKETS,
+            `endif
+            FIFOF#(Bit#(HEADER_SIZE))))) spray_buffer <- replicateM(
+                replicateM(replicateM(mkSizedFIFOF(valueof(PHASE_SIZE)))));
 
-    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(NUM_DIRECT_TOKEN_BUCKETS,
-        RingBuffer#(ReadReqType, ReadResType, WriteReqType))))
-            fwd_buffer <- replicateM(replicateM(replicateM(
-                mkRingBuffer(valueof(CELLS_PER_BUCKET_PER_PHASE_FWD), valueof(CELL_SIZE)))));
-
-        // Matrix to store available tokens per nbr, bucket. Initially,
-        // each bucket has 1 token each.
-        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
-            Vector#(NUM_TOKEN_BUCKETS, Reg#(Bit#(TOKEN_COUNT_SIZE)))))) tkn_count 
-                <- replicateM(replicateM(replicateM(replicateM(mkReg(1)))));
+        Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(
+            `ifdef LIMIT_ACTIVE_BUCKETS
+                NUM_ACTIVE_BUCKETS,
+            `else
+                NUM_DIRECT_TOKEN_BUCKETS,
+            `endif
+            FIFOF#(Bit#(HEADER_SIZE))))) fwd_buffer <- replicateM(
+                replicateM(replicateM(mkSizedFIFOF(valueof(PHASE_SIZE)))));
     `endif
+    
+    // Matrix to store available tokens per nbr, bucket. Initially,
+    // each bucket has 1 token each.
+    Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
+        Vector#(
+            `ifdef LIMIT_ACTIVE_BUCKETS
+                NUM_ACTIVE_BUCKETS,
+            `else
+                NUM_TOKEN_BUCKETS,
+            `endif 
+            Reg#(Bit#(TOKEN_COUNT_SIZE)))))) tkn_count 
+            <- replicateM(replicateM(replicateM(replicateM(mkReg(1)))));
 
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(8)))
         total_num_fwd_cells <- replicateM(mkReg(0));
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         Reg#(Bit#(3))))) num_fwd_cells <- replicateM(replicateM(replicateM(mkReg(0))));
 
+    // DEBUG for 8 nodes, 3 phases (with PIEO queues of list_size=4)
+    // -- doesn't work with 2, 10 buckets in fwd_buffer
+    // But does work if there is a single instance of pieo (not 8*3*bkts, just 1)
+    // Also works for 8 * 1 * 1 fwd_pieo when fwd_buffer is commented out.
+    // For 8*3*1 - scheduler starts but cell generator doesn't!
+    // EVEN STRANGER: when I reduce to a single CellGen buffer and keep
+    // 8*3*1, Scheduler doesn't start either! No consistent trends!!
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
         PIEOQueue))) fwd_pieo <- replicateM(replicateM(replicateM(mkPIEOQueue)));
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, 
@@ -335,8 +363,13 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(ServerIndex))
         host_flow_to_send <- replicateM(mkReg(0));
+    `ifndef DEBUG_WITHOUT_BUFFERS
     Vector#(NUM_OF_ALTERA_PORTS, FIFO#(ReadResType))
         cell_to_send_fifo <- replicateM(mkSizedFIFO(2));
+    `else
+    Vector#(NUM_OF_ALTERA_PORTS, FIFO#(Bit#(HEADER_SIZE)))
+        cell_to_send_fifo <- replicateM(mkSizedFIFO(2));
+    `endif
     
     // Header for outgoing cells. 
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(HEADER_SIZE)))
@@ -372,7 +405,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             // TODO: Should we check that all packets of the cell are transmitted to the same (correct) neighbor.
             rule get_local_cell;
                 let d <- cell_generator[i].host_cell_res[j].get;          
+                `ifndef DEBUG_WITHOUT_BUFFERS
                 cell_to_send_fifo[i].enq(d);
+                `else
+                // TODO: Debug w/o buffers assumes single block per cell
+                Integer s = valueof(BUS_WIDTH) - 1;
+                Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                Bit#(HEADER_SIZE) h = d.data.payload[s:e];
+                cell_to_send_fifo[i].enq(h);
+                `endif
             endrule
         end
         
@@ -381,6 +422,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         begin
             // Get cell to send from remote buffer of current neighbor
             // and the bucket selected via PIEO.
+            `ifndef DEBUG_WITHOUT_BUFFERS    
             rule request_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 6
                             && (buffer_to_send_from[i] == FWD || buffer_to_send_from[i] == SPRAY)
                             && current_phase[i] == fromInteger(j));              
@@ -389,6 +431,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 else
                     spray_buffer[i][j][tx_fwd_buffer_idx[i]].read_request.put(makeReadReq(READ));
             endrule
+            `endif
 
             // For each neighbor & bucket, if a cell is read, prepare to send it.
             `ifdef LIMIT_ACTIVE_BUCKETS
@@ -397,8 +440,18 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             for(Integer l = 0; l < valueof(NUM_FWD_TOKEN_BUCKETS); l = l + 1)
             `endif
             begin
+                `ifndef DEBUG_WITHOUT_BUFFERS
                 rule get_spray_cell;
                     let d <- spray_buffer[i][j][l].read_response.get;
+
+                `else
+                rule get_spray_cell (running[i] == 1 && clock_within_timeslot[i] == 6
+                    && (buffer_to_send_from[i] == SPRAY)
+                    && current_phase[i] == fromInteger(j)
+                    && tx_fwd_buffer_idx[i] == fromInteger(l));
+                    let d <- toGet(spray_buffer[i][j][l]).get;
+
+                `endif
                     $display("[SCHED %d] Decreasing fwd buf len to %d", 
                                 host_index[i], total_num_fwd_cells[i] - 1);
                     total_num_fwd_cells[i] <= total_num_fwd_cells[i] - 1;
@@ -416,8 +469,18 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             for(Integer l = 0; l < valueof(NUM_DIRECT_TOKEN_BUCKETS); l = l + 1)
             `endif
             begin
+                `ifndef DEBUG_WITHOUT_BUFFERS
                 rule get_fwd_cell;
                     let d <- fwd_buffer[i][j][l].read_response.get;
+
+                `else
+                rule get_fwd_cell (running[i] == 1 && clock_within_timeslot[i] == 6
+                    && (buffer_to_send_from[i] == FWD)
+                    && current_phase[i] == fromInteger(j)
+                    && tx_fwd_buffer_idx[i] == fromInteger(l));
+                    let d <- toGet(fwd_buffer[i][j][l]).get;
+
+                `endif
                     total_num_fwd_cells[i] <= total_num_fwd_cells[i] - 1;
                     num_fwd_cells[i][j][current_timeslot[i]] <= 
                         num_fwd_cells[i][j][current_timeslot[i]] - 1;
@@ -439,7 +502,15 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
         rule get_dummy_cell;
             let d <- cell_generator[i].dummy_cell_res.get;
-            cell_to_send_fifo[i].enq(d);
+            `ifndef DEBUG_WITHOUT_BUFFERS
+                cell_to_send_fifo[i].enq(d);
+            `else
+                // TODO: Debug w/o buffers assumes single block per cell
+                Integer s = valueof(BUS_WIDTH) - 1;
+                Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                Bit#(HEADER_SIZE) h = d.data.payload[s:e];
+                cell_to_send_fifo[i].enq(h);
+            `endif
         endrule
 
         // Rule to actually send by forwarding cell to lower layers. 
@@ -449,14 +520,19 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
         // to # of transmit cyles (timeslot - processing overhead)
         rule send_cell (running[i] == 1);
             let d <- toGet(cell_to_send_fifo[i]).get;
-
+            
             Bit#(HEADER_SIZE) h = curr_header[i];
+            `ifndef DEBUG_WITHOUT_BUFFERS
             if (d.data.sop == 1)
             begin
                 Integer s = valueof(BUS_WIDTH) - 1;
                 Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
                 h = d.data.payload[s:e];
-
+            `else
+            if (True)
+            begin
+                h = d;
+            `endif
                 // Set mac layer information in header, once per cell sent.
                 h[valueof(HDR_SRC_MAC_S):valueof(HDR_SRC_MAC_E)] = host_index[i];         // src_mac
                 h[valueof(HDR_DST_MAC_S):valueof(HDR_DST_MAC_E)] = current_neighbor[i];   // dst_mac
@@ -488,17 +564,24 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
             // NOTE: Change this if header size changes!
             // TODO: hard-coded index
-            if (d.data.eop == 1)
-                d.data.payload = {h, h, h, h, h, current_time};
+            `ifdef DEBUG_WITHOUT_BUFFERS
+                RingBufferDataT data = defaultValue;
+                data.sop = 1;
+                data.eop = 1;
+            `else
+                RingBufferDataT data = d.data;
+            `endif
+            if (data.eop == 1)
+                data.payload = {h, h, h, h, h, current_time};
             else
-                d.data.payload = {h, h, h, h, h, h[87:16]};
+                data.payload = {h, h, h, h, h, h[87:16]};
 
             // Put to MAC interface.
-            mac.mac_tx_write_req[i].put(d.data);
+            mac.mac_tx_write_req[i].put(data);
 
             if (verbose)
                 $display("[SCHED %d] Sending cell dst = %d seq_num=%d sop = %d eop = %d to neighbor %d at time %d",
-                    host_index[i], dst_ip, seq_num ,d.data.sop, d.data.eop, current_neighbor[i], current_time);
+                    host_index[i], dst_ip, seq_num ,data.sop, data.eop, current_neighbor[i], current_time);
         endrule
     end
 
@@ -567,9 +650,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
             Phase remaining_spraying_hops = curr_remaining_spray_hops[i];
             Bit#(1) dummy_bit = curr_dummy_bit[i];
 
-            Integer src_mac_phase_int = 0;
-            if (curr_src_mac_phase[i] == 1) src_mac_phase_int = 1;
-            if (curr_src_mac_phase[i] == 2) src_mac_phase_int = 2;
+            Integer src_mac_phase_int = phase_to_int(curr_src_mac_phase[i]);
 
             Bit#(HEADER_SIZE) hd = curr_rx_header[i];
 
@@ -596,10 +677,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 remaining_spraying_hops = hd[valueof(HDR_SPRAY_HOPS_S):valueof(HDR_SPRAY_HOPS_E)];
                 dummy_bit = hd[valueof(HDR_DUMMY_BIT)];
 
-                // hard-coded mapping to integer.
-                src_mac_phase_int = 0;
-                if (src_mac_phase == 1) src_mac_phase_int = 1;
-                if (src_mac_phase == 2) src_mac_phase_int = 2;
+                src_mac_phase_int = phase_to_int(src_mac_phase);
 
                 curr_src_mac[i] <= src_mac;
                 curr_dst_mac[i] <= dst_mac;
@@ -799,11 +877,21 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 buffer_idx = token_bkt_map[i][bucket_idx];
                         `endif
 
+                        `ifndef DEBUG_WITHOUT_BUFFERS
                         if (!spray_buffer[i][next_hop_phase][buffer_idx].full
                                 && bkt_found == 1)
                         begin
                             spray_buffer[i][next_hop_phase][buffer_idx].write_request.put
                                 (makeWriteReq(d.sop, d.eop, d.payload));
+                        `else
+                        if (spray_buffer[i][next_hop_phase][bucket_idx].notFull()
+                                && bkt_found == 1)
+                        begin
+                            Integer s = valueof(BUS_WIDTH) - 1;
+                            Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                            Bit#(HEADER_SIZE) h = d.payload[s:e];
+                            spray_buffer[i][next_hop_phase][bucket_idx].enq(h);
+                        `endif
                             written_to_buffer = 1;
                             `ifdef LIMIT_ACTIVE_BUCKETS
                                 bucket_idx = buffer_idx;
@@ -878,11 +966,21 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 buffer_idx = token_bkt_map[i][bucket_idx];
                         `endif
                         
+                        `ifndef DEBUG_WITHOUT_BUFFERS
                         if (!fwd_buffer[i][next_hop_phase][buffer_idx].full
                             && bkt_found == 1)
                         begin
                             fwd_buffer[i][next_hop_phase][buffer_idx].write_request.put
                                 (makeWriteReq(d.sop, d.eop, d.payload));
+                        `else
+                        if (fwd_buffer[i][next_hop_phase][buffer_idx].notFull()
+                            && bkt_found == 1)
+                        begin
+                            Integer s = valueof(BUS_WIDTH) - 1;
+                            Integer e = valueof(BUS_WIDTH) - valueof(HEADER_SIZE);
+                            Bit#(HEADER_SIZE) h = d.payload[s:e];
+                            fwd_buffer[i][next_hop_phase][buffer_idx].enq(h);
+                        `endif
                             written_to_buffer = 1;
                             `ifdef LIMIT_ACTIVE_BUCKETS
                                 bucket_idx = buffer_idx;
@@ -895,7 +993,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     if (written_to_buffer == 1)
                     begin
                         PIEOElement flow;
-                        flow.id = truncate(bucket_idx);
+                        flow.id = bucket_idx;
                         flow.rank = 0;
                         flow.prev_hop_phase = src_mac_phase;
                         flow.prev_hop_slot = get_timeslot_with_matching_coordinate(host_index[i], 
@@ -1049,7 +1147,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                             // Set number of spray hops in the token sent, based on value recvd from prev hop.
                             tkn.remaining_spraying_hops = x.rem_spraying_hops_recvd;
                             pending_token[i][x.prev_hop_phase][x.prev_hop_slot] 
-                                    <= truncate(get_fwd_bucket_from_tkn(tkn));
+                                    <= get_fwd_bucket_from_tkn(tkn);
                         end
                     end
 

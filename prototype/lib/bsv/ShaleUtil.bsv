@@ -20,6 +20,13 @@ typedef Bit#(3) Phase;          // >= 1 + ceil(log_2(NUM_OF_PHASES)) bits to sto
 
 typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
+`ifdef MULTI_NIC
+typedef 8 NUM_OF_ALTERA_PORTS;
+`else
+typedef 1 NUM_OF_ALTERA_PORTS;
+`endif
+typedef 8 NUM_OF_SWITCH_PORTS;
+typedef Bit#(9) PortIndex;
 
 // In the fwd_buffer, we store cells by phase and send bucket -
 // the number of spray hops is the remaining number
@@ -41,6 +48,20 @@ typedef 4 BUCKET_IDX_BITS;
 typedef 2 CELLS_PER_BUCKET_HOST;
 typedef 1 CELLS_PER_BUCKET_PER_PHASE_FWD;   // Number of cells per bkt per outgoing phase
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
+
+typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
+
+typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
+
+
+// The current time input given to PIEO while dequeuing
+// will be a bitmap for all buckets to mark eligibility.
+// The number of bits = num of token buckets.
+typedef Bit#(NUM_FWD_TOKEN_BUCKETS) PIEOCurrentTime;
+
+// Bits to store initial num of tokens per bucket, which is also the 
+// max num of tokens per bucket for any node at any given time.
+typedef 1 TOKEN_COUNT_SIZE;
 
 // But this doesn't have all the fields mentioned in Shoal paper?!
 // NOTE: If you change header format, also change offset values used in Scheduler.
@@ -160,7 +181,6 @@ function Coordinate get_timeslot_with_matching_coordinate(ServerIndex node, Coor
 
 endfunction
 
-typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
 
 // Get index in fwd buffer from the bucket containing the 
@@ -171,12 +191,12 @@ typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in Rin
 // we mark the final dest bucket as idx 0.
 // TODO: For each node x, the buckets with final destination x
 // will never be occupied, so we can optimize storage accordingly.
-function Bit#(64) get_fwd_bucket_from_tkn(Token tkn);
+function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_from_tkn(Token tkn);
     let d = tkn.dst_ip;     // dest idx: 0 to N-1
     let h = tkn.remaining_spraying_hops;
     // For each dst, spray hops can be from 0 to H-1. 
     // H remaining spray hops implies a local flow.
-    Bit#(64) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
+    Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
     get_fwd_bucket_from_tkn = idx + extend(d) + 1;
 endfunction
 
@@ -207,6 +227,14 @@ function Token get_token_from_bucket_idx(Bit#(BUCKET_IDX_BITS) bucket_idx);
                                         fromInteger(valueof(NUM_OF_SERVERS));
     tkn.remaining_spraying_hops = truncate(spray_hops);
     get_token_from_bucket_idx = tkn;
+endfunction
+
+function Integer phase_to_int(Phase p);
+    Integer phase_int = 0;
+    if (valueof(NUM_OF_PHASES) > 1 && p == 1) phase_int = 1;
+    if (valueof(NUM_OF_PHASES) > 2 && p == 2) phase_int = 2;
+    if (valueof(NUM_OF_PHASES) > 3 && p == 3) phase_int = 3;
+    phase_to_int = phase_int;
 endfunction
 
 // Module to pick a spraying hop at random, using the LFSR modules.

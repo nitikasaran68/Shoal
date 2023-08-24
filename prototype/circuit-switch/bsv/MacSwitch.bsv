@@ -6,7 +6,6 @@ import GetPut::*;
 import Clocks::*;
 import DefaultValue::*;
 
-import SwParams::*;
 import ShaleUtil::*;
 
 import AlteraMacWrap::*;
