@@ -35,7 +35,8 @@ typedef struct packed
     logic [TIMESLOT_LOG-1:0] slot; 
     logic [RANK_LOG-1:0] rank;          //init with infinity
     logic [ID_LOG-1:0] send_time;       // Shale interpretation of send_time is ID
-    logic [PHASE_LOG-1:0] rem_spray_hops_recvd;     
+    logic [PHASE_LOG-1:0] rem_spray_hops_recvd;   
+    logic is_spray;  
 } SublistElement;
 
 typedef struct packed

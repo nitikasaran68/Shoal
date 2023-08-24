@@ -7,8 +7,8 @@ import ShaleUtil::*;
 
 // NOTE: Set these according to pieo_datatypes.sv !!
 
-// TODO: PIEO_LIST_SIZE should be the same as max num fwd token buckets * buckt size
-
+// NOTE: PIEO_LIST_SIZE should be the same as max num fwd 
+// cells expected.
 typedef 9 PIEO_LIST_SIZE;       // Max number of elements in PIEO queue - round up to perfect square.
 typedef 4 ID_LOG;               // clog2(PIEO_LIST_SIZE) bits to store max flow ID
 typedef 3 NODE_ID_LOG;        // Bits to store prev hop of cell.
@@ -16,12 +16,13 @@ typedef 3 NODE_ID_LOG;        // Bits to store prev hop of cell.
 // typedef 3 TIMESLOT_LOG;
 typedef 4 RANK_LOG;             // bits to store flow rank
 typedef 6 TIME_LOG;            // bits to store flow send time
-typedef 17 PIEO_ELEMENT_BITS;   // bits to store a flow in PIEO
+typedef 18 PIEO_ELEMENT_BITS;   // bits to store a flow in PIEO
 typedef 15 PIEO_NULL_ID;        // 2**ID_LOG - 1
 
 typedef 3 CLOG2_NUM_OF_SUBLIST; // bits to store sublist ID
 
 // Struct enqueued and dequeued from PIEO.
+// TODO: Is there any way to shorten this?
 typedef struct
 {
     Phase    prev_hop_phase;                // For FWD cells, hop this cell was recvd from.
@@ -29,6 +30,7 @@ typedef struct
     Bit#(RANK_LOG)  rank;                   // init with infinity
     Bit#(ID_LOG)  id;
     Phase rem_spraying_hops_recvd;
+    Bit#(1) is_spray;
 } PIEOElement deriving(Bits, Eq);
 
 
