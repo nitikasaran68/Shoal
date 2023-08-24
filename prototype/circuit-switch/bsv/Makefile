@@ -14,6 +14,7 @@ CONNECTALFLAGS += --bsvpath=$(PROJECT_DIR)/../lib/generated/
 # CONNECTALFLAGS += -D CW_SIM
 CONNECTALFLAGS += -D MAC_SW
 #CONNECTALFLAGS += -D PHY_SW
+CONNECTALFLAGS += -D WAIT_FOR_START_SIG
 
 CONNECTALFLAGS += --bscflags="-u -show-range-conflict +RTS -K93554432 -RTS -demote-errors G0066:G0045 -suppress-warnings G0046:G0020:S0015:S0080:S0039 -steps-max-intervals 20"
 
