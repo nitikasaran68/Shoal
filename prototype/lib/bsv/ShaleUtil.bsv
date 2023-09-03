@@ -9,10 +9,10 @@ import DefaultValue::*;
 `include "ConnectalProjectConfig.bsv"
 
 // NOTE: If you change these, Header might change as well.
-typedef 4 NUM_OF_SERVERS;       // N
+typedef 16 NUM_OF_SERVERS;       // N
 typedef 2 NUM_OF_PHASES;        // h
-typedef 2 NODES_PER_PHASE;       // (N ** 1/h)
-typedef 1 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
+typedef 4 NODES_PER_PHASE;       // (N ** 1/h)
+typedef 3 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
 // NOTE: Add a margin of 1 bit to Coordinate and Phase, because
 // we will be doing add & mod operations to increment these.
 typedef Bit#(3) Coordinate;     // >= 1 + ceil(log_2(NODES_PER_PHASE)) bits to store each node's index within phase.
@@ -21,11 +21,11 @@ typedef Bit#(3) Phase;          // >= 1 + ceil(log_2(NUM_OF_PHASES)) bits to sto
 typedef Bit#(9) ServerIndex;       // to show feasibility for upto 512 nodes?
 
 `ifdef MULTI_NIC
-typedef 8 NUM_OF_ALTERA_PORTS;
+typedef NUM_OF_SERVERS NUM_OF_ALTERA_PORTS;
 `else
 typedef 1 NUM_OF_ALTERA_PORTS;
 `endif
-typedef 8 NUM_OF_SWITCH_PORTS;
+typedef NUM_OF_SERVERS NUM_OF_SWITCH_PORTS;
 typedef Bit#(9) PortIndex;
 
 // In the fwd_buffer, we store cells by phase and send bucket -
@@ -34,22 +34,22 @@ typedef Bit#(9) PortIndex;
 // cell with remaining spray hops > h-1, our fwd buffer will have
 // cells with spray hops in [0, h-2].
 // NOTE: If this changes, we also need to change PIEO datatypes.
-typedef 9 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
+typedef 33 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
 `ifdef LIMIT_ACTIVE_BUCKETS
-typedef 5 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
-typedef 30 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
+typedef 11 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
+typedef 2046 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
 `else
-typedef 5 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
-typedef 5 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)
+typedef 17 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
+typedef 17 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)
 // TODO: define null bkt address, add comments, rename data structures.
 `endif
 typedef 0 FINAL_DST_BUCKET_IDX;             // 0 
-typedef 4 BUCKET_IDX_BITS;
+typedef 6 BUCKET_IDX_BITS;
 typedef 2 CELLS_PER_BUCKET_HOST;
 typedef 1 CELLS_PER_BUCKET_PER_PHASE_FWD;   // Number of cells per bkt per outgoing phase
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
 
-typedef 512 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
+typedef 2048 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
 typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 
@@ -57,8 +57,11 @@ typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 // The current time input given to PIEO while dequeuing
 // will be a bitmap for all buckets to mark eligibility.
 // The number of bits = num of token buckets.
+`ifdef LIMIT_ACTIVE_BUCKETS
+typedef Bit#(NUM_ACTIVE_BUCKETS) PIEOCurrentTime;
+`else
 typedef Bit#(NUM_FWD_TOKEN_BUCKETS) PIEOCurrentTime;
-
+`endif
 // Bits to store initial num of tokens per bucket, which is also the 
 // max num of tokens per bucket for any node at any given time.
 typedef 1 TOKEN_COUNT_SIZE;
@@ -82,7 +85,6 @@ typedef struct {
 
 // Before adding CC, header size was equal to the bits_per_cycle (64) for current h/w
 // typedef BITS_PER_CYCLE HEADER_SIZE; //size of cell header
-// TODO: check that it is totally okay if the header is bigger than this now?
 typedef 88 HEADER_SIZE;
 
 // Indices for fields in the header. 
@@ -189,15 +191,13 @@ endfunction
 // index by treating the number of spray hops as rows and
 // destinations as columns. We add a 1 to this idx because
 // we mark the final dest bucket as idx 0.
-// TODO: For each node x, the buckets with final destination x
-// will never be occupied, so we can optimize storage accordingly.
 function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_from_tkn(Token tkn);
     let d = tkn.dst_ip;     // dest idx: 0 to N-1
     let h = tkn.remaining_spraying_hops;
     // For each dst, spray hops can be from 0 to H-1. 
     // H remaining spray hops implies a local flow.
     Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
-    get_fwd_bucket_from_tkn = idx + extend(d) + 1;
+    get_fwd_bucket_from_tkn = idx + truncate(d) + 1;
 endfunction
 
 function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_idx(ServerIndex d, Phase h);
@@ -205,10 +205,6 @@ function Bit#(BUCKET_IDX_BITS) get_fwd_bucket_idx(ServerIndex d, Phase h);
     // H remaining spray hops implies a local flow.
     Bit#(BUCKET_IDX_BITS) idx = extend(h) * fromInteger(valueof(NUM_OF_SERVERS));
     get_fwd_bucket_idx = idx + truncate(d) + 1;
-endfunction
-
-function Bit#(BUCKET_IDX_BITS) get_direct_buffer_idx(ServerIndex d);
-    get_direct_buffer_idx = truncate(d) + 1;
 endfunction
 
 function Bit#(BUCKET_IDX_BITS) get_direct_buffer_idx_from_bucket(

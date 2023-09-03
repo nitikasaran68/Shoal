@@ -271,12 +271,9 @@ module mkMacSwitch#(Clock txClock,
     Integer chunks = valueof(CELL_SIZE) / valueof(BITS_PER_CYCLE);
 
     // Shoal original declaration. 
-    // TODO: Find out (a) why initialized to 1 (b) clocked by clause.
-    // a) is because this stores the next timeslot, not current.
     // Vector#(NUM_OF_SWITCH_PORTS, Reg#(PortIndex))
     //     timeslot <- replicateM(mkReg(1, clocked_by rxClock, reset_by rx_reset));
 
-    // TODO: Do we need the clocked by here and the init to 1?
     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Coordinate))
         current_timeslot <- replicateM(mkReg(0, clocked_by rxClock, reset_by rx_reset));
     Vector#(NUM_OF_SWITCH_PORTS, Reg#(Phase))

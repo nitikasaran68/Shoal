@@ -74,7 +74,7 @@ module mkMac#(Clock txClock,
     //interface FIFOs
     Vector#(NUM_OF_ALTERA_PORTS, SyncFIFOIfc#(RingBufferDataT))
         mac_rx_read_res_fifo;
-    Vector#(NUM_OF_ALTERA_PORTS, FIFO#(RingBufferDataT))
+    Vector#(NUM_OF_ALTERA_PORTS, FIFOF#(RingBufferDataT))
         mac_tx_write_req_fifo;
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
@@ -82,7 +82,7 @@ module mkMac#(Clock txClock,
         mac_rx_read_res_fifo[i]
             <- mkSyncFIFO(2, rxClock, rx_reset, txClock);
         mac_tx_write_req_fifo[i]
-            <- mkFIFO(clocked_by txClock, reset_by tx_reset);
+            <- mkSizedBypassFIFOF(4, clocked_by txClock, reset_by tx_reset);
     end
 
 `ifdef WAIT_FOR_START_SIG
@@ -120,6 +120,7 @@ module mkMac#(Clock txClock,
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(16)))
         turn <- replicateM(mkReg(0, clocked_by txClock, reset_by tx_reset));
 
+    // Hard coded for bus width.
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(8, FIFO#(PacketDataT#(BITS_PER_CYCLE))))
         tx_data <- replicateM(replicateM
             (mkPipelineFIFO(clocked_by txClock, reset_by tx_reset)));
@@ -182,6 +183,10 @@ module mkMac#(Clock txClock,
 
                 tx_data[i][j].enq(block);
             end
+
+            if (verbose && i == 0)
+                    $display("[MAC %d] t = %d Processing write request sop=%d eop=%d (putting into tx_data)",
+                        host_index, tx_counter, d.sop, d.eop);
 		endrule
 
         for (Integer j = 0; j < bus_chunks; j = j + 1)
@@ -205,8 +210,8 @@ module mkMac#(Clock txClock,
                 begin
                     eth_mac[i].packet_tx.put(d);
                     if (verbose && i == 0)
-                        $display("[MAC %d] t = %d data sent to mac = %d %d %x",
-                            host_index, tx_counter, d.sop, d.eop, d.data);
+                        $display("[MAC %d] t = %d data sent to mac = %d %d (out of tx_data)",
+                            host_index, tx_counter, d.sop, d.eop);
                 end
     `endif
 
