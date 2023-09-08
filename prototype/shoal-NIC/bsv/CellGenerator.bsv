@@ -33,7 +33,9 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
     FIFOF#(void) dummy_cell_req_fifo <- mkBypassFIFOF;
     FIFOF#(ReadResType) dummy_cell_res_fifo <- mkBypassFIFOF;
     FIFOF#(ServerIndex) host_cell_req_fifo <- mkBypassFIFOF;
-    FIFOF#(ReadResType) host_cell_res_fifo <- mkBypassFIFOF;
+
+    // TODO: This could just be a pipeline FIFO I think?
+    FIFOF#(ReadResType) host_cell_res_fifo <- mkSizedBypassFIFOF(4);
 
     //control registers
     Reg#(Bit#(1)) start_flag <- mkReg(0);
@@ -183,7 +185,8 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
 			default : rate = 10;
 		endcase
         Integer cycles_to_wait_ret = cycles_to_wait(rate);
-        $display("[DMA %d] Cycles to wait is %d", host_index, cycles_to_wait_ret);
+        if (verbose && host_index == 0)
+            $display("[DMA %d] Cycles to wait is %d", host_index, cycles_to_wait_ret);
         num_of_cycles_to_wait <= fromInteger(cycles_to_wait_ret);
 		start_flag <= 1;
 		rate_set_flag <= 0;
@@ -201,6 +204,8 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
     endrule
 
     Reg#(ServerIndex) dst_requested <- mkReg(0);
+
+    (* mutually_exclusive = "handle_host_cell_req, handle_host_cell_res" *)
     rule handle_host_cell_req (start_flag == 1);
         let d <- toGet(host_cell_req_fifo).get;
         host_buffer.read_request.put(makeReadReq(READ));

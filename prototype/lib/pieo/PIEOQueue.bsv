@@ -11,7 +11,7 @@ import ShaleUtil::*;
 // typedef 3 PHASE_LOG;
 // typedef 3 TIMESLOT_LOG;
 typedef 1 RANK_LOG;                 // bits to store flow rank
-typedef 12 TIME_LOG;                 // bits to store flow send time: number of fwd buckets + 1
+typedef 14 TIME_LOG;                 // bits to store flow send time: number of fwd buckets + 1
 typedef 63 PIEO_NULL_ID;            // 2**ID_LOG - 1
 // typedef 4 NUM_OF_SUBLIST;        // 2 * root( PIEO_LIST_SIZE)
 // typedef 2 CLOG2_NUM_OF_SUBLIST;     // clog2(NUM_OF_SUBLIST)
@@ -44,7 +44,9 @@ interface PIEOQueue;
 endinterface
 
 import "BVI" pieo =
-module mkPIEOQueue (PIEOQueue);
+module mkPIEOQueue#(Integer verbose) (PIEOQueue);
+
+    parameter verbose = verbose;
 
     // define an input clock clk, with verilog port clk, and set this to be the default
     default_clock clk(clk);
@@ -78,7 +80,8 @@ module mkPIEOQueue (PIEOQueue);
 
     schedule (get_dequeue_result) SB (dequeue, enqueue);
 
-    schedule get_dequeue_result C get_dequeue_result;
+    // This method is simply a read - no conflict!
+    schedule get_dequeue_result CF get_dequeue_result;
 
     // schedule  dequeue_f C (dequeue, enqueue, dequeue_f);
 

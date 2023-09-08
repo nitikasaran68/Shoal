@@ -79,10 +79,12 @@ module mkMac#(Clock txClock,
 
     for (Integer i = 0; i < valueof(NUM_OF_ALTERA_PORTS); i = i + 1)
     begin
+        // These FIFOs should be able to hold a 4096 bit cell, so that we can
+        // pipeline sched Tx processing and transmission.
         mac_rx_read_res_fifo[i]
-            <- mkSyncFIFO(2, rxClock, rx_reset, txClock);
+            <- mkSyncFIFO(8, rxClock, rx_reset, txClock);
         mac_tx_write_req_fifo[i]
-            <- mkSizedBypassFIFOF(4, clocked_by txClock, reset_by tx_reset);
+            <- mkSizedBypassFIFOF(8, clocked_by txClock, reset_by tx_reset);
     end
 
 `ifdef WAIT_FOR_START_SIG

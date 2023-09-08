@@ -50,7 +50,7 @@ module mkMacSwitch#(Clock txClock,
 		    Reset rxReset,
             Reset rx_reset) (MacSwitch);
 
-    Bool verbose = True;
+    Bool verbose = False;
 
     Clock defaultClock <- exposeCurrentClock();
     Reset defaultReset <- exposeCurrentReset();
