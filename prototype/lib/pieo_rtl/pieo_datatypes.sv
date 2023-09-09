@@ -8,7 +8,7 @@ parameter NUM_OF_ELEMENTS_PER_SUBLIST = 3; //sqrt(LIST_SIZE)
 parameter NUM_OF_SUBLIST = (2*3); //2*NUM_OF_ELEMENTS_PER_SUBLIST
 
 // Bits to store bucket ID (send_time)
-parameter ID_LOG = 6;
+parameter ID_LOG = 7;
 
 // Bits to store prev hop of cell.
 parameter NODE_ID_LOG = 3;

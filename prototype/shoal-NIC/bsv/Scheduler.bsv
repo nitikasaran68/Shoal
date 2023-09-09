@@ -376,8 +376,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(HEADER_SIZE)))
         curr_header <- replicateM(mkReg(0));
 
+    // TODO: Change to FIFOF and check for notFull when enqueuing.
     Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(PHASE_SIZE, FIFO#(Bit#(BUCKET_IDX_BITS)))))
-        pending_token <- replicateM(replicateM(replicateM(mkFIFO)));
+        pending_token <- replicateM(replicateM(replicateM(mkSizedFIFO(3))));
 
     Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(BUCKET_IDX_BITS))) 
         token_to_send <- replicateM(mkReg(fromInteger(valueof(FINAL_DST_BUCKET_IDX))));
@@ -937,8 +938,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         remaining_spraying_hops = remaining_spraying_hops - 1;
                         d.payload[458:456] = remaining_spraying_hops;           // TODO: hard-coded index!
                         if (verbose)
-                            $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d, dst=%d on phase %d", 
-                                host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, dst_ip, next_hop_phase);
+                            $display("[SCHED %d] Rx: Fwd cell to spray_hop=%d (min_buf=%d) remaining spraying hops=%d, dst=%d on phase %d at time=%d", 
+                                host_index[i], next_hop, min_buffer_len, remaining_spraying_hops, dst_ip, next_hop_phase, current_time);
 
                     end
                     else
@@ -960,8 +961,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                                 if (verbose)
                                 begin
                                     let next_hop_coord = get_coordinate(next_hop, next_phase);
-                                    $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d, SANITY_CHECK=%d", 
-                                                host_index[i], next_hop, next_phase, dst_ip, next_hop_coord == dst_coord);
+                                    $display("[SCHED %d] Rx: Fwd cell to direct_hop=%d on phase=%d for dst=%d, at time = %d", 
+                                                host_index[i], next_hop, next_phase, dst_ip, current_time);
                                 end
                             end
                         end
@@ -1006,7 +1007,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
                     curr_rx_next_hop_phase[i] <= next_hop_phase;
                     curr_rx_next_hop_timeslot[i] <= next_hop_timeslot;
-                    curr_rx_bkt_found[i] <= bkt_found;
                     curr_rx_bucket_idx[i] <= bucket_idx;
                     `ifndef LIMIT_ACTIVE_BUCKETS
                         curr_rx_buffer_idx[i] <= buffer_idx;
@@ -1015,8 +1015,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     `endif
                 end
 
-                // ATTN: RACE CONDITION!
-                // TODO: Check for written_to_buffer for all pkts of cell.
                 if (bkt_found == 1)
                 begin
                     Bit#(1) written_to_buffer = 0;
@@ -1067,9 +1065,18 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
                         add_pending_fwd_flow[i][next_hop_phase][next_hop_timeslot].enq(flow);
                     end
-                    else if (written_to_buffer == 0) $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d spray=%d!!", 
+                    else if (written_to_buffer == 0) 
+                    begin
+                        $display("[SCHED %d] FWD BUCKET FULL for nbr=%d, bucket=%d spray=%d!!", 
                             host_index[i], schedule_table[i][next_hop_phase][next_hop_timeslot], bucket_idx, (rem_spraying_hops_recvd > 0) ? 1 : 0);
+                        // Check for written_to_buffer for all pkts of cell.
+                        bkt_found = 0;
+                    end
                 end
+                
+                // bkt_found is bkt_found && written_to_buffer.
+                if (d.sop == 1)
+                    curr_rx_bkt_found[i] <= bkt_found;
             end
 
         endrule
@@ -1101,17 +1108,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 (* descending_urgency = "choose_buffer_to_send_from_2, update_tokens" *)
                 (* descending_urgency = "choose_buffer_to_send_from_2, receive_cell" *)
                 (* descending_urgency = "choose_buffer_to_send_from, enq_fwd_cell" *)
-                // TODO: I don't need this I think?
-                (* execution_order = "choose_buffer_to_send_from_2, enq_fwd_cell" *)
 
                 // To select local flow to send, we want to pick the next flow 
                 // in round robin that has cells to send.  
                 rule choose_buffer_to_send_from;
                     let dc <- toGet(choose_buffer_to_send_from_fifo[i][j][k]).get;
                     
-                    // For testing, mark everything as eligble.
-                    // PIEOCurrentTime curr_time_in = '1;
-
                     // Final dst bucket is always eligible. For others (up to num_buckets - 1)
                     // check that there exist tokens AND packets.
                     PIEOCurrentTime curr_time_in = 1 << fromInteger(valueof(FINAL_DST_BUCKET_IDX));
@@ -1124,9 +1126,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         if (tkn_count[i][j][k][bkt] > 0)    
                             curr_time_in = curr_time_in | 1 << fromInteger(bkt);
                     end
-
-                    // $display("[SCHED %d] sending deq request at time=%d", host_index[i], current_time);
-                    // First priority to remote cells to forward.
+                    // $display("[SCHED %d] sending deq request with bitmap %d at time=%d",
+                    //         host_index[i], curr_time_in, current_time);
                     fwd_pieo[i][j][k].dequeue(extend(curr_time_in));
                 endrule
 
@@ -1165,11 +1166,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                             `ifdef LIMIT_ACTIVE_BUCKETS
                                 tx_fwd_buffer_idx[i] <= bkt_idx;
                             `else
-                            tx_fwd_buffer_idx[i] <= get_direct_buffer_idx_from_bucket(bkt_idx);
+                                tx_fwd_buffer_idx[i] <= get_direct_buffer_idx_from_bucket(bkt_idx);
                             `endif
                             if (verbose)
-                                $display("[SCHED %d] chose to send FWD cell from bucket %d (%d), prev_hop = %d", 
-                                    host_index[i], bkt_idx, x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot]);
+                                $display("[SCHED %d] chose to send FWD cell from bucket %d (%d), prev_hop = %d at time = %d", 
+                                    host_index[i], bkt_idx, x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot], current_time);
                         end
                         
                         if (x.id != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
