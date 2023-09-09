@@ -1,0 +1,84 @@
+obj/Makefile:263: warning: overriding recipe for target 'verilog/mkPcieEndpointX7.v'
+obj/Makefile:47: warning: ignoring old recipe for target 'verilog/mkPcieEndpointX7.v'
+obj/Makefile:407: warning: overriding recipe for target 'verilog/mkPcieEndpointX7.v'
+obj/Makefile:263: warning: ignoring old recipe for target 'verilog/mkPcieEndpointX7.v'
+obj/Makefile:571: warning: overriding recipe for target 'verilog/mkDdr3.v'
+obj/Makefile:467: warning: ignoring old recipe for target 'verilog/mkDdr3.v'
+obj/Makefile:661: warning: overriding recipe for target 'verilog/mkPcieRootPortX7.v'
+obj/Makefile:423: warning: ignoring old recipe for target 'verilog/mkPcieRootPortX7.v'
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+buffer /home/vishal/Shoal/prototype/shoal-hw-simulator/1-fpga-multiple-nics/vsim/bin/ubuntu.exe
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+ERROR: ld.so: object 'libSegFault.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+run_idx=0, node_idx=0, num_time_slots=256
+run_idx=0, node_idx=0, num_total_pkts_recvd=49
+run_idx=0, node_idx=0, latency_in_cycles=388
+run_idx=0, node_idx=0, max_buffer_len=7
+run_idx=0, node_idx=1, latency_in_cycles=388
+run_idx=0, node_idx=1, max_buffer_len=6
+run_idx=0, node_idx=2, latency_in_cycles=388
+run_idx=0, node_idx=2, max_buffer_len=6
+run_idx=0, node_idx=3, latency_in_cycles=388
+run_idx=0, node_idx=3, max_buffer_len=5
+run_idx=0, node_idx=4, latency_in_cycles=388
+run_idx=0, node_idx=4, max_buffer_len=7
+run_idx=0, node_idx=5, latency_in_cycles=388
+run_idx=0, node_idx=5, max_buffer_len=6
+run_idx=0, node_idx=6, latency_in_cycles=388
+run_idx=0, node_idx=6, max_buffer_len=6
+run_idx=0, node_idx=7, latency_in_cycles=388
+run_idx=0, node_idx=7, max_buffer_len=5
+run_idx=0, node_idx=8, latency_in_cycles=388
+run_idx=0, node_idx=9, max_buffer_len=6
+run_idx=0, node_idx=9, latency_in_cycles=388
+run_idx=0, node_idx=8, max_buffer_len=7
+run_idx=0, node_idx=10, latency_in_cycles=388
+run_idx=0, node_idx=10, max_buffer_len=6
+run_idx=0, node_idx=11, latency_in_cycles=388
+run_idx=0, node_idx=11, max_buffer_len=5
+run_idx=0, node_idx=12, latency_in_cycles=388
+run_idx=0, node_idx=12, max_buffer_len=7
+run_idx=0, node_idx=13, latency_in_cycles=388
+run_idx=0, node_idx=13, max_buffer_len=6
+run_idx=0, node_idx=14, latency_in_cycles=388
+run_idx=0, node_idx=14, max_buffer_len=6
+run_idx=0, node_idx=15, latency_in_cycles=388
+run_idx=0, node_idx=15, max_buffer_len=5
+run_idx=0, node_idx=1, num_time_slots=256
+run_idx=0, node_idx=1, num_total_pkts_recvd=63
+run_idx=0, node_idx=6, num_time_slots=256
+run_idx=0, node_idx=2, num_total_pkts_recvd=66
+run_idx=0, node_idx=2, num_time_slots=256
+run_idx=0, node_idx=3, num_total_pkts_recvd=66
+run_idx=0, node_idx=3, num_time_slots=256
+run_idx=0, node_idx=4, num_total_pkts_recvd=49
+run_idx=0, node_idx=4, num_time_slots=256
+run_idx=0, node_idx=5, num_total_pkts_recvd=63
+run_idx=0, node_idx=5, num_time_slots=256
+run_idx=0, node_idx=6, num_total_pkts_recvd=66
+run_idx=0, node_idx=7, num_time_slots=256
+run_idx=0, node_idx=7, num_total_pkts_recvd=66
+run_idx=0, node_idx=10, num_time_slots=256
+run_idx=0, node_idx=8, num_total_pkts_recvd=49
+run_idx=0, node_idx=8, num_time_slots=256
+run_idx=0, node_idx=9, num_total_pkts_recvd=63
+run_idx=0, node_idx=9, num_time_slots=256
+run_idx=0, node_idx=10, num_total_pkts_recvd=66
+run_idx=0, node_idx=12, num_time_slots=256
+run_idx=0, node_idx=11, num_total_pkts_recvd=66
+run_idx=0, node_idx=11, num_time_slots=256
+run_idx=0, node_idx=12, num_total_pkts_recvd=49
+run_idx=0, node_idx=13, num_time_slots=256
+run_idx=0, node_idx=13, num_total_pkts_recvd=63
+run_idx=0, node_idx=14, num_time_slots=256
+run_idx=0, node_idx=14, num_total_pkts_recvd=66
+run_idx=0, node_idx=15, num_time_slots=256
+run_idx=0, node_idx=15, num_total_pkts_recvd=66
+xsim_disconnect:75 pint=0x40ea1a0 calling $finish
+make: *** [/home/vishal/connectal/scripts/Makefile.connectal.build:241: run] Interrupt

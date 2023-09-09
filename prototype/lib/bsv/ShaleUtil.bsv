@@ -37,8 +37,8 @@ typedef Bit#(9) PortIndex;
 // NOTE: If this changes, we also need to change PIEO datatypes.
 typedef 33 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
 `ifdef LIMIT_ACTIVE_BUCKETS
-typedef 13 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
-typedef 8190 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
+typedef 17 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
+typedef 131070 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
 `else
 typedef 17 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
 typedef 17 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)

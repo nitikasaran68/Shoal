@@ -20,13 +20,13 @@ parameter RANK_LOG = 1;
 
 // NOTE: When using with shale, curr_time_in = bitmap for buckets.
 // num bits is >= num fwd buckets + 1 (for null bucket).
-parameter TIME_LOG = 14;
+parameter TIME_LOG = 18;
 
 // This bit should be 0 in every curr_time_in received.
 // So we can use this for empty elements, as it also will
 // be later in sorted order than any inserted element.
 // Numerically equal to the num of fwd token buckets.
-parameter NULL_BUCKET = 13;
+parameter NULL_BUCKET = 17;
 
 typedef struct packed
 {

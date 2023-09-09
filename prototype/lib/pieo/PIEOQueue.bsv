@@ -11,7 +11,7 @@ import ShaleUtil::*;
 // typedef 3 PHASE_LOG;
 // typedef 3 TIMESLOT_LOG;
 typedef 1 RANK_LOG;                 // bits to store flow rank
-typedef 14 TIME_LOG;                 // bits to store flow send time: number of fwd buckets + 1
+typedef 18 TIME_LOG;                 // bits to store flow send time: number of fwd buckets + 1
 typedef 63 PIEO_NULL_ID;            // 2**ID_LOG - 1
 // typedef 4 NUM_OF_SUBLIST;        // 2 * root( PIEO_LIST_SIZE)
 // typedef 2 CLOG2_NUM_OF_SUBLIST;     // clog2(NUM_OF_SUBLIST)

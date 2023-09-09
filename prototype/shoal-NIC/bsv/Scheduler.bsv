@@ -312,7 +312,7 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 NUM_DIRECT_TOKEN_BUCKETS,
             `endif
             FIFOF#(Bit#(HEADER_SIZE))))) fwd_buffer <- replicateM(
-                replicateM(replicateM(mkSizedFIFOF(valueof(PHASE_SIZE) * num_pkts_per_cell))));
+                replicateM(replicateM(mkSizedFIFOF(valueof(EPOCH_SIZE) * num_pkts_per_cell))));
         
     `endif
     
@@ -967,19 +967,12 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         end
                     end
 
-                    // Get bucket_idx for this packet, and the index within
-                    // the direct buffers. 
-                    if (dst_ip == next_hop)
-                    begin
-                        bucket_idx =  fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
-                        buffer_idx = bucket_idx;
-                    end
-                    else
-                    begin
-                        bucket_idx = get_fwd_bucket_idx(dst_ip, remaining_spraying_hops);
-                        if (rem_spraying_hops_recvd > 0) buffer_idx = bucket_idx;
-                        else buffer_idx = get_direct_buffer_idx_from_bucket(bucket_idx);
-                    end
+                    // Get send token idx for this packet, and the index within
+                    // the fwd buffers. 
+                    bucket_idx = get_fwd_bucket_idx(dst_ip, remaining_spraying_hops);
+                    buffer_idx = bucket_idx;
+                    if (rem_spraying_hops_recvd == 0)
+                        buffer_idx = get_direct_buffer_idx_from_bucket(bucket_idx);
 
                     bkt_found = 1;
                     `ifdef LIMIT_ACTIVE_BUCKETS
@@ -1017,6 +1010,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     curr_rx_bucket_idx[i] <= bucket_idx;
                     `ifndef LIMIT_ACTIVE_BUCKETS
                         curr_rx_buffer_idx[i] <= buffer_idx;
+                        num_pending_pkts[i][bucket_idx] <=
+                            num_pending_pkts[i][bucket_idx] + 1;
                     `endif
                 end
 
@@ -1059,6 +1054,8 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
 
                     if (written_to_buffer == 1 && d.eop == 1)
                     begin
+                        if (dst_ip == schedule_table[i][next_hop_phase][next_hop_timeslot])
+                            bucket_idx = fromInteger(valueOf(FINAL_DST_BUCKET_IDX));
                         PIEOElement flow;
                         flow.id = bucket_idx;
                         flow.rank = 0;
@@ -1146,29 +1143,36 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     PIEOElement x <- toGet(choose_buffer_to_send_from_2_fifo[i][j][k]).get;                    
                     if (x.id != fromInteger(valueof(PIEO_NULL_ID)))
                     begin
+                        Bit#(BUCKET_IDX_BITS) bkt_idx = x.id;
+                        if (x.id == fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                        begin
+                            bkt_idx = get_fwd_bucket_idx(schedule_table[i][j][k], 
+                                               x.rem_spraying_hops_recvd - extend(x.is_spray));
+                            `ifdef LIMIT_ACTIVE_BUCKETS bkt_idx = token_bkt_map[i][bkt_idx]; `endif
+                        end
+
                         if (x.is_spray == 1)
                         begin
                             buffer_to_send_from[i] <= SPRAY;
-                            tx_fwd_buffer_idx[i] <= x.id;
+                            tx_fwd_buffer_idx[i] <= bkt_idx;
                             if (verbose)
-                                $display("[SCHED %d] chose to send SPRAY cell from bucket %d, prev_hop = %d at time=%d", 
-                                    host_index[i], x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot], current_time);
+                                $display("[SCHED %d] chose to send SPRAY cell from bucket %d (%d), prev_hop = %d at time=%d", 
+                                    host_index[i], bkt_idx, x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot], current_time);
                         end
                         else
                         begin
                             buffer_to_send_from[i] <= FWD;
                             `ifdef LIMIT_ACTIVE_BUCKETS
-                                tx_fwd_buffer_idx[i] <= x.id;
+                                tx_fwd_buffer_idx[i] <= bkt_idx;
                             `else
-                            tx_fwd_buffer_idx[i] <= get_direct_buffer_idx_from_bucket(x.id);
+                            tx_fwd_buffer_idx[i] <= get_direct_buffer_idx_from_bucket(bkt_idx);
                             `endif
                             if (verbose)
-                                $display("[SCHED %d] chose to send FWD cell from bucket %d, prev_hop = %d", 
-                                    host_index[i], x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot]);
+                                $display("[SCHED %d] chose to send FWD cell from bucket %d (%d), prev_hop = %d", 
+                                    host_index[i], bkt_idx, x.id, schedule_table[i][x.prev_hop_phase][x.prev_hop_slot]);
                         end
                         
-                        Bit#(BUCKET_IDX_BITS) bkt_idx  = x.id;
-                        if (bkt_idx != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
+                        if (x.id != fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
                         begin
                             tkn_count[i][j][k][bkt_idx] <= tkn_count[i][j][k][bkt_idx] - 1;
                             if (verbose)
@@ -1177,15 +1181,11 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                         end
                         
                         // Enqueue token to send to previous hop of chosen cell
-                        Token tkn;
-                        Bit#(BUCKET_IDX_BITS) tkn_bkt_idx = x.id;
+                        Bit#(BUCKET_IDX_BITS) tkn_bkt_idx = bkt_idx;
                         `ifdef LIMIT_ACTIVE_BUCKETS
-                            tkn_bkt_idx = bkt_token_map[i][x.id];
+                            tkn_bkt_idx = bkt_token_map[i][bkt_idx];
                         `endif
-                        if(x.id == fromInteger(valueof(FINAL_DST_BUCKET_IDX)))
-                            tkn.dst_ip = schedule_table[i][j][k];
-                        else
-                            tkn = get_token_from_bucket_idx(tkn_bkt_idx);
+                        Token tkn = get_token_from_bucket_idx(tkn_bkt_idx);
                         // Set number of spray hops in the token sent, based on value recvd from prev hop.
                         tkn.remaining_spraying_hops = x.rem_spraying_hops_recvd;
                         pending_token[i][x.prev_hop_phase][x.prev_hop_slot] 
@@ -1358,7 +1358,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 // TODO: not sure if this is really helping...
                 rule enq_fwd_cell;
                     let flow <- toGet(add_pending_fwd_flow[i][j][k]).get;
-                    let x <- toGet(fwd_pieo[i][j][k].wait_enqueue_ready).get;
                     
                     let bucket_idx = flow.id;
 
@@ -1377,10 +1376,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                     if (num_fwd_cells[i][j][k] > 4)
                         $display("[SCHED %d] PIEO IS FULL for nbr=%d!! num_fwd_cells=%d",
                             host_index[i], schedule_table[i][j][k], num_fwd_cells[i][j][k]);
-                    `ifdef LIMIT_ACTIVE_BUCKETS
-                        num_pending_pkts[i][bucket_idx] <=
-                            num_pending_pkts[i][bucket_idx] + 1;
-                    `endif
                 endrule
 
                 // Update flow eligibility for each flow via current neighbor,
