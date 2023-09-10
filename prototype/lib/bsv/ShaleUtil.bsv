@@ -10,10 +10,10 @@ import DefaultValue::*;
 
 // NOTE: If you change these, Header might change as well.
 typedef 16 NUM_OF_SERVERS;       // N
-typedef 4 NUM_OF_PHASES;        // h
-typedef 2 NODES_PER_PHASE;      // (N ** 1/h)
-typedef 1 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
-typedef 4 EPOCH_SIZE;           // PHASE_SIZE * NUM_OF_PHASES
+typedef 2 NUM_OF_PHASES;        // h
+typedef 4 NODES_PER_PHASE;      // (N ** 1/h)
+typedef 3 PHASE_SIZE;           // NODES_PER_PHASE - 1. The number of timeslots in each phase.
+typedef 6 EPOCH_SIZE;           // PHASE_SIZE * NUM_OF_PHASES
 // NOTE: Add a margin of 1 bit to Coordinate and Phase, because
 // we will be doing add & mod operations to increment these.
 typedef Bit#(3) Coordinate;     // >= 1 + ceil(log_2(NODES_PER_PHASE)) bits to store each node's index within phase.
@@ -35,12 +35,14 @@ typedef Bit#(9) PortIndex;
 // cell with remaining spray hops > h-1, our fwd buffer will have
 // cells with spray hops in [0, h-2].
 // NOTE: If this changes, we also need to change PIEO datatypes.
-typedef 65 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
+typedef 33 NUM_TOKEN_BUCKETS;                // (N * h) + (1 for final dest)
 `ifdef LIMIT_ACTIVE_BUCKETS
+// The actual num of active buckets is 15 
+// (including one for the final dest.
 typedef 17 NUM_ACTIVE_BUCKETS;               // 1 + total number of buckets active at any time
 typedef 131070 BUCKET_BITMAP_ALL_FREE;           // (2**NUM_ACTIVE_BUCKETS - 1) - 1 (reserve final dst bucket)
 `else
-typedef 49 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
+typedef 17 NUM_FWD_TOKEN_BUCKETS;            // (N * (h-1)) + (1 for final dest)
 typedef 17 NUM_DIRECT_TOKEN_BUCKETS;         // N + (1 for final dest)
 // TODO: define null bkt address, add comments, rename data structures.
 `endif
@@ -50,7 +52,7 @@ typedef 2 CELLS_PER_BUCKET_HOST;
 typedef 1 CELLS_PER_BUCKET_PER_PHASE_FWD;   // Number of cells per bkt per outgoing phase
 // typedef CELLS_PER_BUCKET_FWD FWD_BUFFER_SIZE;
 
-typedef 4096 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
+typedef 2048 CELL_SIZE; //in bits; must be a multiple of BUS_WIDTH defined in RingBufferTypes.
 
 typedef 64 BITS_PER_CYCLE; //for 10Gbps interface and 156.25MHz clock freq
 
