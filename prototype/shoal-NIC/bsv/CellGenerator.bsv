@@ -185,6 +185,10 @@ module mkCellGenerator#(Integer cell_size) (CellGenerator);
 			default : rate = 10;
 		endcase
         Integer cycles_to_wait_ret = cycles_to_wait(rate);
+
+        // Init wait reg so that we generate a cell immediately!
+        wait_period <= fromInteger(cycles_to_wait_ret);
+
         if (verbose && host_index == 0)
             $display("[DMA %d] Cycles to wait is %d", host_index, cycles_to_wait_ret);
         num_of_cycles_to_wait <= fromInteger(cycles_to_wait_ret);

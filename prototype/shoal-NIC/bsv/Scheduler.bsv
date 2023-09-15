@@ -292,9 +292,9 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
     `else
         Integer num_pkts_per_cell = valueof(CELL_SIZE) / valueof(BUS_WIDTH);
 
-        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(4))) curr_tx_pkt_idx <- replicateM(mkReg(0));
-        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(4))) rem_fwd_req <- replicateM(mkReg(0));
-        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(4))) rem_spray_req <- replicateM(mkReg(0));
+        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(6))) curr_tx_pkt_idx <- replicateM(mkReg(0));
+        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(6))) rem_fwd_req <- replicateM(mkReg(0));
+        Vector#(NUM_OF_ALTERA_PORTS, Reg#(Bit#(6))) rem_spray_req <- replicateM(mkReg(0));
         
         Vector#(NUM_OF_ALTERA_PORTS, Vector#(NUM_OF_PHASES, Vector#(
             `ifdef LIMIT_ACTIVE_BUCKETS
@@ -751,8 +751,6 @@ module mkScheduler#(Mac mac, Vector#(NUM_OF_ALTERA_PORTS, CellGenerator) cell_ge
                 curr_src_mac_phase[i] <= src_mac_phase;
                 curr_remaining_spray_hops[i] <= remaining_spraying_hops;
                 curr_dummy_bit[i] <= dummy_bit;
-
-                
 
                 if (dst_mac != host_index[i])
                 begin
